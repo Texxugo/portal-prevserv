@@ -36,6 +36,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# banco SQLite (dados de produção vivem fora do repo)
+/prisma/dev.db
+/prisma/dev.db-journal
+/prisma/*.db-wal
+/prisma/*.db-shm
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
