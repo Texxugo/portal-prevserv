@@ -1,0 +1,401 @@
+// Portal Interno — schema do banco (SQLite no MVP; trocar provider p/ postgresql depois)
+// docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  RH
+  GESTOR
+  VIEWER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(VIEWER)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Department {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  employees Employee[]
+  efetivos  Efetivo[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Employee {
+  id            String      @id @default(cuid())
+  name          String
+  matricula     String?     @unique
+  cpf           String?     @unique
+  email         String?
+  phone         String?
+  position      String?
+  departmentId  String?
+  department    Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  admissionDate DateTime?
+  salary        Float?
+  status        String      @default("ATIVO") // ATIVO | INATIVO | AFASTADO
+  workSchedule  String? // jornada semanal (JSON: { "0".."6": {entrada,almocoSaida,almocoVolta,saida}|null })
+  escalaId      String?
+  escala        Escala?     @relation(fields: [escalaId], references: [id], onDelete: SetNull)
+  escalaInicio  DateTime? // âncora do ciclo da escala
+  movements     Movement[]
+  fechamentos   EspelhoFechamento[]
+  documentPendencias DocumentoPendencia[]
+  apontamentos  Apontamento[]
+  efetivos      Efetivo[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([departmentId])
+  @@index([matricula])
+  @@index([escalaId])
+}
+
+model Escala {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  cycleDays String // JSON: (DaySchedule|null)[] — 1 item por dia do ciclo
+  employees Employee[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Movement {
+  id          String    @id @default(cuid())
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type        String // FALTA | FERIAS | CONTRATACAO | DEMISSAO
+  justificada Boolean? // só para FALTA
+  startDate   DateTime
+  endDate     DateTime?
+  note        String?
+  competencia String? // "YYYY-MM" (mês de fechamento, regra 21-20) — derivado de startDate
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@index([type])
+  @@index([competencia])
+  @@index([competencia, type])
+}
+
+// Efetivo diário: histórico de alocação nos postos (Department).
+// Colaborador cadastrado (employeeId) OU freelancer (freelancerName) — exatamente um.
+// Duplicados permitidos (mesma pessoa/data/período) — cobre troca de posto e extras.
+model Efetivo {
+  id             String     @id @default(cuid())
+  employeeId     String?
+  employee       Employee?  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  freelancerName String?
+  departmentId   String
+  department     Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  date           DateTime
+  horario        String?
+  local          String?
+  evento         String? // TT | TI | TE | TP | PI | Sem alteração (obrigatório no form; null só em legado)
+  periodo        String // DIURNO | NOTURNO
+  extra          Boolean    @default(false)
+  documentPendencias DocumentoPendencia[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([employeeId])
+  @@index([departmentId])
+  @@index([date])
+}
+
+model WhatsappMessageLog {
+  id           String   @id @default(cuid())
+  employeeId   String?
+  matricula    String?
+  employeeName String
+  phone        String
+  competencia  String
+  message      String
+  status       String // ENVIADO | ERRO
+  zaapiMessageId String?
+  error        String?
+  createdAt    DateTime @default(now())
+
+  @@index([competencia])
+  @@index([matricula])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+// Notificações in-app (sino do header). dedupeKey evita alerta duplicado
+// (ex.: "cobranca:{employeeId}:{YYYY-MM-DD}" = 1 por funcionário/dia).
+model Notificacao {
+  id        String    @id @default(cuid())
+  tipo      String // COBRANCA_PENDENCIA
+  title     String
+  message   String
+  href      String?
+  dedupeKey String    @unique
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([readAt, createdAt])
+}
+
+// Apontamento p/ folha: 1 registro por colaborador + competência (lançamento manual dos direitos).
+model Apontamento {
+  id                String   @id @default(cuid())
+  employeeId        String
+  employee          Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  competencia       String // "YYYY-MM" (mês de fechamento, regra 21-20)
+  total             Int      @default(0)
+  valeTransporte    Int      @default(0)
+  valeRefeicao      Int      @default(0)
+  adicionalNoturno  Int?
+  he50              String? // duração "HH:MM"
+  he100             String? // duração "HH:MM"
+  intra             Int?
+  faltasE           Int? // faltas "escala" (E) — FALTAS TOTAL = E + F
+  faltasF           Int? // faltas "folga" (F)
+  faltasJust        Int?
+  faltasNJust       Int?
+  dsr               Int?
+  gratPercent       Int?
+  recebeCesta       Boolean  @default(true)
+  recebeAssiduidade Boolean  @default(true)
+  observacoes       String? // texto livre multilinha (1 linha = 1 linha no DOCX)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([employeeId, competencia])
+  @@index([competencia])
+}
+
+model EspelhoFechamento {
+  id          String              @id @default(cuid())
+  employeeId  String
+  employee    Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  competencia String
+  status      String              @default("ABERTO") // ABERTO | EM_ANALISE | ENCERRADO
+  closedAt    DateTime?
+  ocorrencias EspelhoOcorrencia[]
+  dias        EspelhoDiaRaw[]
+  eventos     EspelhoEvento[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([employeeId, competencia])
+  @@index([competencia])
+}
+
+// Batidas cruas do arquivo (fonte da verdade) — ocorrências são derivadas e recomputáveis.
+model EspelhoDiaRaw {
+  id           String            @id @default(cuid())
+  fechamentoId String
+  fechamento   EspelhoFechamento @relation(fields: [fechamentoId], references: [id], onDelete: Cascade)
+  data         DateTime
+  marcacoes    String // "HH:MM HH:MM ..."
+
+  @@unique([fechamentoId, data])
+  @@index([fechamentoId])
+}
+
+// Trilha de auditoria por espelho: justificativa, encerramento, reabertura, reprocessamento.
+model EspelhoEvento {
+  id           String            @id @default(cuid())
+  fechamentoId String
+  fechamento   EspelhoFechamento @relation(fields: [fechamentoId], references: [id], onDelete: Cascade)
+  action       String // JUSTIFICATIVA | JUSTIFICATIVA_LOTE | ENCERRADO | REABERTO | IMPORTADO | REPROCESSADO
+  description  String?
+  actorUserId  String
+  actorName    String
+  createdAt    DateTime          @default(now())
+
+  @@index([fechamentoId, createdAt])
+}
+
+// Registro de cada importação de TXT (quem, quando, arquivo, resultado).
+model EspelhoImportLog {
+  id                String   @id @default(cuid())
+  competencia       String
+  fileName          String
+  origem            String // ESPELHOS | FECHAMENTO
+  actorUserId       String
+  actorName         String
+  processados       Int
+  ocorrencias       Int
+  semJornada        String // JSON: nomes sem jornada cadastrada
+  naoEncontrados    String // JSON: nomes não encontrados no cadastro
+  encerradosPulados Int
+  createdAt         DateTime @default(now())
+
+  @@index([competencia, createdAt])
+}
+
+// ---- To-Do / Kanban compartilhável ----
+// Permissão por recurso: dono (ownerId) gerencia quadro/colunas/membros; membros editam tarefas.
+// Sem FK para User (padrão do projeto): ids + nomes denormalizados.
+
+model TodoBoard {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  ownerName   String
+  columns     TodoColumn[]
+  tasks       TodoTask[]
+  members     TodoBoardMember[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([ownerId])
+}
+
+model TodoBoardMember {
+  id        String    @id @default(cuid())
+  boardId   String
+  board     TodoBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  userId    String
+  userName  String
+  addedById String
+  createdAt DateTime  @default(now())
+
+  @@unique([boardId, userId])
+  @@index([userId])
+}
+
+model TodoColumn {
+  id      String     @id @default(cuid())
+  boardId String
+  board   TodoBoard  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  name    String
+  order   Int
+  isDone  Boolean    @default(false) // coluna "Concluído": destino do toggle na visão lista
+  tasks   TodoTask[]
+
+  @@index([boardId, order])
+}
+
+model TodoTask {
+  id             String     @id @default(cuid())
+  boardId        String
+  board          TodoBoard  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  columnId       String
+  column         TodoColumn @relation(fields: [columnId], references: [id]) // sem cascade: deleteColumn move antes
+  title          String
+  description    String?
+  assigneeUserId String?
+  assigneeName   String?
+  dueDate        DateTime?
+  priority       String     @default("MEDIA") // BAIXA | MEDIA | ALTA
+  order          Int
+  createdById    String
+  createdByName  String
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([columnId, order])
+  @@index([boardId])
+}
+
+// Fechamento da competência inteira: FECHADA trava import/edição e libera export oficial.
+model EspelhoCompetencia {
+  competencia  String    @id
+  status       String    @default("ABERTA") // ABERTA | FECHADA
+  closedAt     DateTime?
+  closedById   String?
+  closedByName String?
+  updatedAt    DateTime  @updatedAt
+}
+
+model EspelhoOcorrencia {
+  id                    String            @id @default(cuid())
+  fechamentoId          String
+  fechamento            EspelhoFechamento @relation(fields: [fechamentoId], references: [id], onDelete: Cascade)
+  data                  DateTime
+  tipo                  String // IMPAR | FALTA | ATRASO | SAIDA_ANTECIPADA | HORA_EXTRA | INTERVALO
+  detalhe               String
+  marcacoes             String
+  justificativaCategoria String?
+  justificativaObs      String?
+  resolvido             Boolean           @default(false)
+  documentPendencias    DocumentoPendencia[]
+  createdAt             DateTime          @default(now())
+
+  @@index([fechamentoId])
+}
+
+model DocumentoTipo {
+  id         String              @id @default(cuid())
+  name       String              @unique
+  active     Boolean             @default(true)
+  pendencias DocumentoPendencia[]
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+}
+
+model DocumentoPendencia {
+  id             String              @id @default(cuid())
+  employeeId     String?
+  employee       Employee?           @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  employeeName   String
+  matricula      String?
+  competencia    String
+  documentTypeId String
+  documentType   DocumentoTipo       @relation(fields: [documentTypeId], references: [id])
+  occurrenceId   String?
+  occurrence     EspelhoOcorrencia?  @relation(fields: [occurrenceId], references: [id], onDelete: SetNull)
+  efetivoId      String?
+  efetivo        Efetivo?            @relation(fields: [efetivoId], references: [id], onDelete: SetNull)
+  sourceDate     DateTime?
+  sourceType     String?
+  sourceDetail   String?
+  reason         String
+  notes          String?
+  status         String              @default("PENDENTE") // PENDENTE | SOLICITADO | RECEBIDO | CANCELADO
+  followUpDate   DateTime
+  externalUrl    String?
+  requestedAt    DateTime?
+  receivedAt     DateTime?
+  canceledAt     DateTime?
+  createdById    String
+  createdByName  String
+  history        DocumentoPendenciaHistorico[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([employeeId])
+  @@index([occurrenceId])
+  @@index([efetivoId])
+  @@index([competencia, status])
+  @@index([status, followUpDate])
+}
+
+model DocumentoPendenciaHistorico {
+  id          String              @id @default(cuid())
+  pendenciaId String
+  pendencia   DocumentoPendencia  @relation(fields: [pendenciaId], references: [id], onDelete: Cascade)
+  action      String
+  description String?
+  actorUserId String
+  actorName   String
+  metadata    String?
+  createdAt   DateTime            @default(now())
+
+  @@index([pendenciaId, createdAt])
+}
