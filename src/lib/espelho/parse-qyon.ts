@@ -54,32 +54,38 @@ function parseAgrupadas(
 // ---- Relatório "Lista de Marcações Realizadas Simplificadas" (1 linha por colab+data,
 // ano 4 díg, marcações com sufixo opcional "i") ----
 // "   1144 1006     GIOVANA DE SOUZA E SILVA      21/05/2026 06:55 11:11 12:10 16:02"
-const SIMPLE_RE = /^\s*\d+\s+(\S+)\s+(.+?)\s+(\d{2})\/(\d{2})\/(\d{4})\s+(.*)$/
+//   grupo 1 = Emp. (empresa) | grupo 2 = matrícula
+const SIMPLE_RE = /^\s*(\d+)\s+(\S+)\s+(.+?)\s+(\d{2})\/(\d{2})\/(\d{4})\s+(.*)$/
 
 function parseSimplificado(lines: string[]): EspelhoColaborador[] {
-  const byMat = new Map<string, EspelhoColaborador>()
+  // A matrícula só é única DENTRO de cada empresa — empresas diferentes reusam o mesmo
+  // número (ex.: 1144/545 KAIQUE e 1147/545 RAIMUNDO). Agrupa por empresa+matrícula para
+  // não fundir pessoas distintas (senão a última linha sobrescreve as batidas da outra).
+  const byKey = new Map<string, EspelhoColaborador>()
   const order: string[] = []
 
   for (const line of lines) {
     const m = SIMPLE_RE.exec(line)
     if (!m) continue
-    const matricula = m[1].trim()
-    const nome = m[2].trim()
-    const dd = parseInt(m[3], 10)
-    const mm = parseInt(m[4], 10)
-    const yyyy = parseInt(m[5], 10)
-    const marcacoes = m[6].match(/\d{2}:\d{2}/g) ?? [] // sufixo "i" é ignorado
+    const empresa = m[1].trim()
+    const matricula = m[2].trim()
+    const nome = m[3].trim()
+    const dd = parseInt(m[4], 10)
+    const mm = parseInt(m[5], 10)
+    const yyyy = parseInt(m[6], 10)
+    const marcacoes = m[7].match(/\d{2}:\d{2}/g) ?? [] // sufixo "i" é ignorado
 
-    let col = byMat.get(matricula)
+    const chave = `${empresa}|${matricula}`
+    let col = byKey.get(chave)
     if (!col) {
       col = { matricula, nome, dias: [] }
-      byMat.set(matricula, col)
-      order.push(matricula)
+      byKey.set(chave, col)
+      order.push(chave)
     }
     col.dias.push({ data: new Date(Date.UTC(yyyy, mm - 1, dd)), marcacoes })
   }
 
-  return order.map((k) => byMat.get(k)!)
+  return order.map((k) => byKey.get(k)!)
 }
 
 // Período coberto pelo relatório: menor e maior data listadas entre TODOS os colaboradores

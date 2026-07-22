@@ -49,15 +49,26 @@ export function aplicarVirada(
     }
   }
 
-  for (const k of [...map.keys()].sort()) {
-    const dia = map.get(k)!
-    const sched = resolveDay(dia.data)
+  // Candidatos a início de turno noturno: cada dia com batida + a véspera de cada dia com
+  // batida. A véspera cobre o caso em que a ENTRADA da noite não foi batida (o dia da entrada
+  // não aparece no arquivo, logo não está no map), mas a saída da madrugada seguinte existe e
+  // pertence àquela noite — sem isso a saída ficaria órfã no dia seguinte e a noite viraria falta.
+  const candidatos = new Map<string, Date>()
+  for (const d of map.values()) {
+    candidatos.set(dateKey(d.data), d.data)
+    const vespera = new Date(d.data.getTime() - DAY_MS)
+    candidatos.set(dateKey(vespera), vespera)
+  }
+
+  for (const k of [...candidatos.keys()].sort()) {
+    const data = candidatos.get(k)!
+    const sched = resolveDay(data)
     if (!sched?.entrada || !sched?.saida) continue
     const entrada = toMin(sched.entrada)
     const saida = toMin(sched.saida)
     if (saida >= entrada) continue // diurno: não vira a noite
 
-    const next = map.get(dateKey(new Date(dia.data.getTime() + DAY_MS)))
+    const next = map.get(dateKey(new Date(data.getTime() + DAY_MS)))
     if (!next || next.marcacoes.length === 0) continue
 
     // Entre a saída da manhã e a próxima entrada da noite existe uma janela de descanso.
@@ -66,7 +77,10 @@ export function aplicarVirada(
     const saidaNoite = next.marcacoes.filter((m) => toMin(m) <= cutoff)
     if (saidaNoite.length === 0) continue
 
+    // Se a entrada não foi batida, o dia da entrada ainda não existe no map — cria agora.
+    const dia = map.get(k) ?? { data, marcacoes: [] as string[] }
     dia.marcacoes = [...dia.marcacoes, ...saidaNoite]
+    map.set(k, dia)
     next.marcacoes = next.marcacoes.filter((m) => toMin(m) > cutoff)
   }
 
