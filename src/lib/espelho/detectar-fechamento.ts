@@ -132,10 +132,16 @@ export function detectarOcorrencias(
 
     if (marc.length % 2 !== 0) {
       // Último dia varrido + turno noturno: a saída cai fora do período do relatório
-      // (madrugada seguinte) — jornada em aberto não é marcação incompleta.
+      // (madrugada seguinte) — jornada em aberto não é marcação incompleta. Mas isso só
+      // vale para "entrada pendente" (só bateu a entrada da noite): se já existe uma saída
+      // de madrugada nas marcações, o turno terminou e a marcação está de fato incompleta.
       const noturno =
         !!sched.entrada && !!sched.saida && toMin(sched.saida) < toMin(sched.entrada)
-      if (noturno && data.getTime() === lastTime) continue
+      if (noturno && data.getTime() === lastTime) {
+        const cutoff = Math.floor((toMin(sched.saida!) + toMin(sched.entrada!)) / 2)
+        const temSaidaMadrugada = marc.some((m) => toMin(m) <= cutoff)
+        if (!temSaidaMadrugada) continue
+      }
       out.push({
         data,
         tipo: "IMPAR",
