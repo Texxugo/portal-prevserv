@@ -184,7 +184,11 @@ export async function importarEspelhoFechamento(
     ocorr: ReturnType<typeof detectarOcorrencias>
     merged: EspelhoDia[] // batidas acumuladas (existentes fora da janela do arquivo + arquivo)
   }
-  const procs: Proc[] = []
+  // Chaveado por employeeId: dois registros do arquivo podem casar com o MESMO colaborador
+  // do cadastro (ex.: matrícula reusada entre empresas + cadastro com essa matrícula). Nesse
+  // caso juntamos as batidas num único proc — senão o createMany de fechamentos estoura a
+  // unique (employeeId, competencia).
+  const procByEmp = new Map<string, Proc>()
 
   // 1ª passada: mescla as batidas do arquivo com as já gravadas (import incremental —
   // arquivo 30→04 soma ao 21→29 importado antes; dentro da janela, o arquivo novo vence).
@@ -209,6 +213,13 @@ export async function importarEspelhoFechamento(
       continue
     }
 
+    // Mesmo colaborador já visto neste arquivo: soma as batidas ao proc existente.
+    const jaProc = procByEmp.get(emp.id)
+    if (jaProc) {
+      jaProc.merged = [...jaProc.merged, ...c.dias]
+      continue
+    }
+
     const existing = existingByEmp.get(emp.id)
     if (existing?.status === "ENCERRADO") {
       encerradosPulados++
@@ -224,13 +235,15 @@ export async function importarEspelhoFechamento(
       : []
     const merged = [...foraJanela, ...c.dias]
 
-    procs.push({
+    procByEmp.set(emp.id, {
       emp,
       carry: existing ? buildCarry(existing.ocorrencias) : new Map(),
       ocorr: [],
       merged,
     })
   }
+
+  const procs: Proc[] = [...procByEmp.values()]
 
   // Janela acumulada global da competência: tudo que já foi importado (qualquer
   // fechamento) + o arquivo atual. Limita a detecção nas duas pontas.
