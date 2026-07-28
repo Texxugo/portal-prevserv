@@ -20,7 +20,13 @@ export async function GET(req: Request) {
   const fechs = await prisma.espelhoFechamento.findMany({
     where: { competencia },
     include: {
-      employee: { select: { name: true, matricula: true } },
+      employee: {
+        select: {
+          name: true,
+          matricula: true,
+          department: { select: { name: true } },
+        },
+      },
       ocorrencias: { orderBy: { data: "asc" } },
     },
     orderBy: { employee: { name: "asc" } },
@@ -32,6 +38,7 @@ export async function GET(req: Request) {
       rows.push({
         Matrícula: f.employee.matricula ?? "",
         Colaborador: f.employee.name,
+        Departamento: f.employee.department?.name ?? "",
         Status: f.status,
         Data: formatDate(o.data),
         Tipo: OCORRENCIA_LABEL[o.tipo as OcorrenciaTipo] ?? o.tipo,

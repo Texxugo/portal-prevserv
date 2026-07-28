@@ -62,6 +62,14 @@ export async function marcarNotificacoesLidas(): Promise<{ ok: boolean }> {
   return { ok: true }
 }
 
+// Remove todas as notificações do sino. Se a condição de origem persistir (ex.: pendência
+// ainda aberta), o scheduler recria a notificação no próximo ciclo (dedupeKey por dia).
+export async function limparNotificacoes(): Promise<{ ok: boolean }> {
+  if (!(await canReadNotificacoes())) return { ok: false }
+  await prisma.notificacao.deleteMany({})
+  return { ok: true }
+}
+
 export async function setCobrancaPhone(
   phone: string
 ): Promise<{ ok: boolean; error?: string }> {

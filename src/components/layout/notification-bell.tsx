@@ -6,6 +6,7 @@ import { Bell } from "lucide-react"
 
 import {
   getNotificacoes,
+  limparNotificacoes,
   marcarNotificacoesLidas,
   type NotificacaoItem,
 } from "@/lib/actions/notificacoes"
@@ -58,6 +59,12 @@ export function NotificationBell() {
     )
   }
 
+  function limpar() {
+    void limparNotificacoes()
+    setItems([])
+    setUnread(0)
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -84,15 +91,26 @@ export function NotificationBell() {
       <DropdownMenuContent align="end" className="w-80">
         <div className="flex items-center justify-between px-2 py-1.5">
           <span className="text-sm font-medium">Notificações</span>
-          {unread > 0 && (
-            <button
-              type="button"
-              onClick={marcarLidas}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              Marcar todas como lidas
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {unread > 0 && (
+              <button
+                type="button"
+                onClick={marcarLidas}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Marcar todas como lidas
+              </button>
+            )}
+            {items.length > 0 && (
+              <button
+                type="button"
+                onClick={limpar}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
         </div>
         <DropdownMenuSeparator />
         {items.length === 0 && (
