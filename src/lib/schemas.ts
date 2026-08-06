@@ -233,6 +233,11 @@ export const EFETIVO_EVENTOS = [
   EFETIVO_EVENTO_SEM_ALTERACAO,
 ] as const
 
+// "AS TE" é alias legado gravado antes da padronização dos eventos
+export function normalizeEvento(evento?: string | null) {
+  return evento === "AS TE" ? "TE" : evento ?? ""
+}
+
 const optionalTime = z
   .string()
   .trim()
@@ -240,47 +245,88 @@ const optionalTime = z
   .transform((v) => (v ? v : null))
   .refine((v) => v === null || /^\d{2}:\d{2}$/.test(v), "Horário inválido")
 
+// Campos que valem para o registro inteiro (e, no cadastro, para o lote todo).
 const efetivoBase = z.object({
-  employeeId: optionalText,
-  freelancerName: optionalText,
   departmentId: z.string().trim().min(1, "Posto inválido"),
   date: requiredDate("Informe a data"),
-  horario: optionalText,
-  horarioEntrada: optionalTime,
-  horarioSaida: optionalTime,
-  local: optionalText,
-  evento: z.enum(EFETIVO_EVENTOS, { message: "Selecione o evento" }),
   periodo: z.enum(["DIURNO", "NOTURNO"]),
-  // checkbox nativo: "on" quando marcado, ausente quando não
-  extra: z
-    .string()
-    .optional()
-    .transform((v) => v === "on" || v === "true"),
 })
 
-const pessoaRefine = (
-  d: { employeeId: string | null; freelancerName: string | null },
-  ctx: z.RefinementCtx
-) => {
-  if (!d.employeeId && !d.freelancerName) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["employeeId"],
-      message: "Selecione o colaborador ou informe o nome do freelancer",
-    })
+const eventoField = z.enum(EFETIVO_EVENTOS, { message: "Selecione o evento" })
+
+// checkbox nativo manda "on"; as linhas do lote vêm de JSON, já como boolean
+const extraField = z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .transform((v) => v === true || v === "on" || v === "true")
+
+const PESSOA_OBRIGATORIA =
+  "Selecione o colaborador ou informe o nome do freelancer"
+
+// Edição altera 1 registro → 1 colaborador, com função, horário, evento e extra.
+export const efetivoSchema = efetivoBase
+  .extend({
+    employeeId: optionalText,
+    freelancerName: optionalText,
+    local: optionalText,
+    horario: optionalText,
+    horarioEntrada: optionalTime,
+    horarioSaida: optionalTime,
+    evento: eventoField,
+    extra: extraField,
+  })
+  .superRefine((d, ctx) => {
+    if (!d.employeeId && !d.freelancerName) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["employeeId"],
+        message: PESSOA_OBRIGATORIA,
+      })
+    }
+  })
+
+// Uma linha do lote: 1 pessoa numa função, com horário, evento e extra próprios.
+const efetivoLinhaSchema = z
+  .object({
+    local: optionalText,
+    employeeId: optionalText,
+    freelancerName: optionalText,
+    horarioEntrada: optionalTime,
+    horarioSaida: optionalTime,
+    evento: eventoField,
+    extra: extraField,
+  })
+  .superRefine((d, ctx) => {
+    if (!d.employeeId && !d.freelancerName) {
+      ctx.addIssue({ code: "custom", path: ["employeeId"], message: PESSOA_OBRIGATORIA })
+    }
+  })
+
+// O form envia as linhas como JSON num campo só (a quantidade é dinâmica).
+const linhasJson = z.preprocess((v) => {
+  if (typeof v !== "string") return v
+  try {
+    return JSON.parse(v)
+  } catch {
+    return []
   }
-}
+}, z.array(efetivoLinhaSchema).min(1, "Adicione ao menos um colaborador"))
 
-export const efetivoSchema = efetivoBase.superRefine(pessoaRefine)
-
+// Cadastro em lote: 1 Efetivo por linha (+ 1 para a base operacional, se houver).
 export const efetivoCreateSchema = efetivoBase
   .extend({
+    baseOperacionalId: optionalText,
+    linhas: linhasJson,
     temDocumento: z.enum(["sim", "nao"]).optional(),
     documentoUrl: optionalText,
   })
-  .superRefine(pessoaRefine)
   .superRefine((d, ctx) => {
-    if (d.evento === EFETIVO_EVENTO_SEM_ALTERACAO) return
+    // a pergunta de documento vale para o lote: só é exigida se ao menos uma
+    // linha tiver evento que gera pendência
+    const exigeDocumento = d.linhas.some(
+      (l) => l.evento !== EFETIVO_EVENTO_SEM_ALTERACAO
+    )
+    if (!exigeDocumento) return
     if (!d.temDocumento) {
       ctx.addIssue({
         code: "custom",

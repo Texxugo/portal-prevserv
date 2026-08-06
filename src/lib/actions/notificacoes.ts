@@ -34,10 +34,11 @@ export async function getNotificacoes(): Promise<{
 
   const [rows, unread] = await Promise.all([
     prisma.notificacao.findMany({
+      where: { dismissedAt: null },
       orderBy: { createdAt: "desc" },
       take: 15,
     }),
-    prisma.notificacao.count({ where: { readAt: null } }),
+    prisma.notificacao.count({ where: { readAt: null, dismissedAt: null } }),
   ])
 
   return {
@@ -56,17 +57,21 @@ export async function getNotificacoes(): Promise<{
 export async function marcarNotificacoesLidas(): Promise<{ ok: boolean }> {
   if (!(await canReadNotificacoes())) return { ok: false }
   await prisma.notificacao.updateMany({
-    where: { readAt: null },
+    where: { readAt: null, dismissedAt: null },
     data: { readAt: new Date() },
   })
   return { ok: true }
 }
 
-// Remove todas as notificações do sino. Se a condição de origem persistir (ex.: pendência
-// ainda aberta), o scheduler recria a notificação no próximo ciclo (dedupeKey por dia).
+// Esvazia o sino por SOFT DELETE. Apagar as linhas destruiria o dedupeKey e o
+// tick seguinte (60s) recriaria o alerta e REENVIARIA o WhatsApp em massa.
 export async function limparNotificacoes(): Promise<{ ok: boolean }> {
   if (!(await canReadNotificacoes())) return { ok: false }
-  await prisma.notificacao.deleteMany({})
+  const now = new Date()
+  await prisma.notificacao.updateMany({
+    where: { dismissedAt: null },
+    data: { dismissedAt: now, readAt: now },
+  })
   return { ok: true }
 }
 

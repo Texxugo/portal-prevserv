@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import type { z } from "zod"
 
 import { actorName, requireSectorEdit } from "@/lib/auth-helpers"
 import { competenciaFromDate } from "@/lib/competencia"
@@ -17,22 +16,40 @@ import {
 
 const DOCUMENTO_TIPO_EFETIVO = "Documento de efetivo"
 
-function buildData(parsed: z.infer<typeof efetivoSchema>) {
+type CamposComuns = {
+  departmentId: string
+  date: Date
+  periodo: string
+}
+
+// evento e extra são por pessoa (cada linha do lote tem os seus)
+type Pessoa = {
+  employeeId: string | null
+  freelancerName: string | null
+  local: string | null
+  horarioEntrada: string | null
+  horarioSaida: string | null
+  horario?: string | null // texto legado (só na edição)
+  evento: string
+  extra: boolean
+}
+
+function buildData(comuns: CamposComuns, p: Pessoa) {
   const horario =
-    parsed.horarioEntrada && parsed.horarioSaida
-      ? `${parsed.horarioEntrada} - ${parsed.horarioSaida}`
-      : parsed.horarioEntrada ?? parsed.horarioSaida ?? parsed.horario
+    p.horarioEntrada && p.horarioSaida
+      ? `${p.horarioEntrada} - ${p.horarioSaida}`
+      : p.horarioEntrada ?? p.horarioSaida ?? p.horario ?? null
 
   return {
-    employeeId: parsed.employeeId,
-    freelancerName: parsed.employeeId ? null : parsed.freelancerName,
-    departmentId: parsed.departmentId,
-    date: parsed.date,
+    employeeId: p.employeeId,
+    freelancerName: p.employeeId ? null : p.freelancerName,
+    departmentId: comuns.departmentId,
+    date: comuns.date,
     horario,
-    local: parsed.local,
-    evento: parsed.evento,
-    periodo: parsed.periodo,
-    extra: parsed.extra,
+    local: p.local,
+    evento: p.evento,
+    periodo: comuns.periodo,
+    extra: p.extra,
   }
 }
 
@@ -52,75 +69,108 @@ export async function createEfetivo(
   if (!parsed.success) return { errors: toFieldErrors(parsed.error) }
   const data = parsed.data
 
-  const [department, employee] = await Promise.all([
+  // Base operacional (se informada) entra como mais um registro do dia. É só
+  // presença: sem evento próprio, não gera pendência de documento.
+  const pessoas: Pessoa[] = [
+    ...(data.baseOperacionalId
+      ? [
+          {
+            employeeId: data.baseOperacionalId,
+            freelancerName: null,
+            local: null,
+            horarioEntrada: null,
+            horarioSaida: null,
+            evento: EFETIVO_EVENTO_SEM_ALTERACAO,
+            extra: false,
+          },
+        ]
+      : []),
+    ...data.linhas,
+  ]
+
+  const idsUsados = pessoas
+    .map((p) => p.employeeId)
+    .filter((id): id is string => !!id)
+
+  const [department, employees] = await Promise.all([
     prisma.department.findUnique({
       where: { id: data.departmentId },
       select: { id: true, name: true },
     }),
-    data.employeeId
-      ? prisma.employee.findUnique({
-          where: { id: data.employeeId },
+    idsUsados.length
+      ? prisma.employee.findMany({
+          where: { id: { in: idsUsados } },
           select: { id: true, name: true, matricula: true },
         })
-      : Promise.resolve(null),
+      : Promise.resolve([]),
   ])
   if (!department) return { errors: { departmentId: ["Posto não encontrado"] } }
-  if (data.employeeId && !employee) {
-    return { errors: { employeeId: ["Colaborador não encontrado"] } }
+  if (employees.length !== new Set(idsUsados).size) {
+    return { errors: { linhas: ["Colaborador não encontrado"] } }
   }
 
-  const pessoaName = employee?.name ?? data.freelancerName ?? ""
+  // o tipo de documento só é criado se alguma linha exigir pendência
+  const documentTypeId = pessoas.some(
+    (p) => p.evento !== EFETIVO_EVENTO_SEM_ALTERACAO
+  )
+    ? (
+        (await prisma.documentoTipo.findFirst({
+          where: { name: DOCUMENTO_TIPO_EFETIVO },
+        })) ??
+        (await prisma.documentoTipo.create({
+          data: { name: DOCUMENTO_TIPO_EFETIVO },
+        }))
+      ).id
+    : null
 
-  const shouldCreatePendencia = data.evento !== EFETIVO_EVENTO_SEM_ALTERACAO
-  const documentPendencias = shouldCreatePendencia
-    ? {
-        create: {
-          employeeId: employee?.id ?? null,
-          employeeName: pessoaName,
-          matricula: employee?.matricula ?? null,
-          competencia: competenciaFromDate(data.date),
-          documentTypeId: (
-            (await prisma.documentoTipo.findFirst({
-              where: { name: DOCUMENTO_TIPO_EFETIVO },
-            })) ??
-            (await prisma.documentoTipo.create({
-              data: { name: DOCUMENTO_TIPO_EFETIVO },
-            }))
-          ).id,
-          sourceDate: data.date,
-          sourceType: "EFETIVO",
-          sourceDetail: `Evento ${data.evento} — ${department.name}`,
-          reason: `Evento ${data.evento} em ${formatDate(data.date)} no posto ${department.name}`,
-          followUpDate:
-            data.temDocumento === "sim"
-              ? data.date
-              : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          status: data.temDocumento === "sim" ? "RECEBIDO" : "PENDENTE",
-          externalUrl: data.temDocumento === "sim" ? data.documentoUrl : null,
-          receivedAt: data.temDocumento === "sim" ? new Date() : null,
-          createdById: user.id,
-          createdByName: actorName(user),
-          history: {
+  for (const pessoa of pessoas) {
+    const employee = pessoa.employeeId
+      ? employees.find((e) => e.id === pessoa.employeeId)
+      : null
+    const documentPendencias =
+      pessoa.evento !== EFETIVO_EVENTO_SEM_ALTERACAO && documentTypeId
+        ? {
             create: {
-              action: data.temDocumento === "sim" ? "RECEBIDA" : "CRIADA",
-              description:
+              employeeId: employee?.id ?? null,
+              employeeName: employee?.name ?? pessoa.freelancerName ?? "",
+              matricula: employee?.matricula ?? null,
+              competencia: competenciaFromDate(data.date),
+              documentTypeId,
+              sourceDate: data.date,
+              sourceType: "EFETIVO",
+              sourceDetail: `Evento ${pessoa.evento} — ${department.name}`,
+              reason: `Evento ${pessoa.evento} em ${formatDate(data.date)} no posto ${department.name}`,
+              followUpDate:
                 data.temDocumento === "sim"
-                  ? "Documento vinculado no cadastro do efetivo."
-                  : "Pendência criada automaticamente pelo cadastro de efetivo (sem documento).",
-              actorUserId: user.id,
-              actorName: actorName(user),
+                  ? data.date
+                  : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+              status: data.temDocumento === "sim" ? "RECEBIDO" : "PENDENTE",
+              externalUrl: data.temDocumento === "sim" ? data.documentoUrl : null,
+              receivedAt: data.temDocumento === "sim" ? new Date() : null,
+              createdById: user.id,
+              createdByName: actorName(user),
+              history: {
+                create: {
+                  action: data.temDocumento === "sim" ? "RECEBIDA" : "CRIADA",
+                  description:
+                    data.temDocumento === "sim"
+                      ? "Documento vinculado no cadastro do efetivo."
+                      : "Pendência criada automaticamente pelo cadastro de efetivo (sem documento).",
+                  actorUserId: user.id,
+                  actorName: actorName(user),
+                },
+              },
             },
-          },
-        },
-      }
-    : undefined
+          }
+        : undefined
 
-  await prisma.efetivo.create({
-    data: {
-      ...buildData(data),
-      ...(documentPendencias ? { documentPendencias } : {}),
-    },
-  })
+    await prisma.efetivo.create({
+      data: {
+        ...buildData(data, pessoa),
+        ...(documentPendencias ? { documentPendencias } : {}),
+      },
+    })
+  }
 
   refresh(department.id)
   redirect(`/rh/efetivos/${department.id}?date=${formatDateInput(data.date)}`)
@@ -137,7 +187,7 @@ export async function updateEfetivo(
 
   await prisma.efetivo.update({
     where: { id },
-    data: buildData(parsed.data),
+    data: buildData(parsed.data, parsed.data),
   })
   refresh(parsed.data.departmentId)
   redirect(

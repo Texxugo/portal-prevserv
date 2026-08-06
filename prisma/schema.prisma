@@ -144,17 +144,21 @@ model Setting {
 
 // Notificações in-app (sino do header). dedupeKey evita alerta duplicado
 // (ex.: "cobranca:{employeeId}:{YYYY-MM-DD}" = 1 por funcionário/dia).
+// "Limpar" no sino faz soft delete (dismissedAt): a linha PRECISA sobreviver,
+// senão o dedupeKey some e o próximo tick recria o alerta e REENVIA o WhatsApp.
 model Notificacao {
-  id        String    @id @default(cuid())
-  tipo      String // COBRANCA_PENDENCIA
-  title     String
-  message   String
-  href      String?
-  dedupeKey String    @unique
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+  id          String    @id @default(cuid())
+  tipo        String // COBRANCA_PENDENCIA
+  title       String
+  message     String
+  href        String?
+  dedupeKey   String    @unique
+  readAt      DateTime?
+  dismissedAt DateTime?
+  createdAt   DateTime  @default(now())
 
   @@index([readAt, createdAt])
+  @@index([dismissedAt])
 }
 
 // Apontamento p/ folha: 1 registro por colaborador + competência (lançamento manual dos direitos).

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 
 import { requireSectorEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
+import { baseDepartmentIds, employeeOptions } from "@/lib/efetivo-options"
 import { formatDateInput } from "@/lib/format"
 import { PageHeader } from "@/components/layout/page-header"
 import {
@@ -17,7 +18,7 @@ export default async function EditarEfetivoPage({
   const { deptId, id } = await params
   await requireSectorEdit("rh")
 
-  const [efetivo, employees] = await Promise.all([
+  const [efetivo, baseIds] = await Promise.all([
     prisma.efetivo.findUnique({
       where: { id },
       include: {
@@ -25,13 +26,24 @@ export default async function EditarEfetivoPage({
         department: { select: { id: true, name: true } },
       },
     }),
-    prisma.employee.findMany({
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
+    baseDepartmentIds(),
   ])
 
   if (!efetivo || efetivo.departmentId !== deptId) notFound()
+
+  const rows = await prisma.employee.findMany({
+    where: {
+      OR: [
+        { status: "ATIVO", departmentId: deptId },
+        { status: "ATIVO", departmentId: { in: baseIds } },
+        // colaborador já vinculado (legado/inativo/de outro posto) continua visível
+        ...(efetivo.employeeId ? [{ id: efetivo.employeeId }] : []),
+      ],
+    },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, matricula: true, departmentId: true },
+  })
+  const employees = employeeOptions(rows, deptId, baseIds)
 
   const values: EfetivoValues = {
     id: efetivo.id,

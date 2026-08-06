@@ -8,6 +8,11 @@ import { getCobrancaPhone } from "./config"
 
 const DAY_MS = 86_400_000
 
+// Notificação nunca é apagada pelo sino (o dedupeKey precisa sobreviver, senão
+// o alerta é recriado e o WhatsApp reenviado). O expurgo por idade é seguro
+// porque o dedupeKey carrega a data — uma chave antiga jamais se repete.
+const RETENCAO_DIAS = 60
+
 type PendenciaComEmployee = Prisma.DocumentoPendenciaGetPayload<{
   include: {
     documentType: { select: { name: true } }
@@ -25,6 +30,10 @@ export async function tickCobranca(now: Date = new Date()): Promise<void> {
     Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
   )
   const isoDay = todayUtc.toISOString().slice(0, 10)
+
+  await prisma.notificacao.deleteMany({
+    where: { createdAt: { lt: new Date(now.getTime() - RETENCAO_DIAS * DAY_MS) } },
+  })
 
   const pendencias = await prisma.documentoPendencia.findMany({
     where: {

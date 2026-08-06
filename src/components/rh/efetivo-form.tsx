@@ -4,14 +4,24 @@ import { useActionState, useState } from "react"
 import { useFormStatus } from "react-dom"
 import { Loader2 } from "lucide-react"
 
-import { createEfetivo, updateEfetivo } from "@/lib/actions/efetivos"
+import { updateEfetivo } from "@/lib/actions/efetivos"
+import type { EmployeeOption } from "@/lib/efetivo-options"
 import type { FormState } from "@/lib/form"
 import {
-  EFETIVO_EVENTO_SEM_ALTERACAO,
   EFETIVO_EVENTOS,
+  normalizeEvento,
 } from "@/lib/schemas"
 import { BackLink } from "@/components/back-link"
 import { Button } from "@/components/ui/button"
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  useComboboxFilter,
+} from "@/components/ui/combobox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -21,8 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-
-type Option = { id: string; name: string }
 
 export type EfetivoValues = {
   id: string
@@ -42,8 +50,26 @@ const PERIODO_OPTIONS: { value: string; label: string }[] = [
   { value: "NOTURNO", label: "Noturno" },
 ]
 
-function normalizeEvento(evento?: string | null) {
-  return evento === "AS TE" ? "TE" : evento ?? ""
+const comparaEmployee = (a: EmployeeOption, b: EmployeeOption) =>
+  a?.value === b?.value
+
+// Popup compartilhado pelos modos único (edição) e múltiplo (cadastro).
+function ListaColaboradores() {
+  return (
+    <ComboboxContent>
+      <ComboboxEmpty>Nenhum colaborador encontrado.</ComboboxEmpty>
+      <ComboboxList>
+        {(item: EmployeeOption) => (
+          <ComboboxItem key={item.value} value={item}>
+            <span className="flex-1 truncate">{item.label}</span>
+            {item.base && (
+              <span className="text-xs text-muted-foreground">BASE</span>
+            )}
+          </ComboboxItem>
+        )}
+      </ComboboxList>
+    </ComboboxContent>
+  )
 }
 
 function splitHorario(horario?: string | null) {
@@ -98,34 +124,38 @@ function Radio({
   )
 }
 
+// Edição de 1 registro. O cadastro (em lote) fica em efetivo-lote-form.tsx.
 export function EfetivoForm({
   employees,
   departmentId,
   departmentName,
   efetivo,
 }: {
-  employees: Option[]
+  employees: EmployeeOption[]
   departmentId: string
   departmentName: string
-  efetivo?: EfetivoValues
+  efetivo: EfetivoValues
 }) {
-  const action = efetivo ? updateEfetivo.bind(null, efetivo.id) : createEfetivo
   const [state, formAction] = useActionState<FormState, FormData>(
-    action,
+    updateEfetivo.bind(null, efetivo.id),
     undefined
   )
   const errors = state?.errors
 
   const [tipoPessoa, setTipoPessoa] = useState<"funcionario" | "freelancer">(
-    efetivo?.freelancerName ? "freelancer" : "funcionario"
+    efetivo.freelancerName ? "freelancer" : "funcionario"
   )
-  const [temDocumento, setTemDocumento] = useState<"sim" | "nao" | null>(null)
-  const [evento, setEvento] = useState(normalizeEvento(efetivo?.evento))
-  const horario = splitHorario(efetivo?.horario)
-  const isSemAlteracao = evento === EFETIVO_EVENTO_SEM_ALTERACAO
+  const [evento, setEvento] = useState(normalizeEvento(efetivo.evento))
+  const horario = splitHorario(efetivo.horario)
+
+  const filter = useComboboxFilter()
+  const selectedEmployee =
+    employees.find((e) => e.value === efetivo?.employeeId) ?? null
+  const filtraEmployee = (item: EmployeeOption, query: string) =>
+    filter.contains(item.label, query) ||
+    (!!item.matricula && filter.contains(item.matricula, query))
 
   // Base UI Select: `items` mapeia valor → rótulo exibido no trigger
-  const employeeItems = Object.fromEntries(employees.map((e) => [e.id, e.name]))
   const periodoItems = Object.fromEntries(
     PERIODO_OPTIONS.map((p) => [p.value, p.label])
   )
@@ -162,22 +192,20 @@ export function EfetivoForm({
         {tipoPessoa === "funcionario" ? (
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="employeeId">Funcionário *</Label>
-            <Select
+            <Combobox
               name="employeeId"
-              defaultValue={efetivo?.employeeId ?? ""}
-              items={employeeItems}
+              items={employees}
+              defaultValue={selectedEmployee}
+              isItemEqualToValue={comparaEmployee}
+              filter={filtraEmployee}
+              autoHighlight
             >
-              <SelectTrigger id="employeeId" className="w-full">
-                <SelectValue placeholder="Selecione o funcionário" />
-              </SelectTrigger>
-              <SelectContent>
-                {employees.map((e) => (
-                  <SelectItem key={e.id} value={e.id}>
-                    {e.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <ComboboxInput
+                id="employeeId"
+                placeholder="Pesquisar colaborador…"
+              />
+              <ListaColaboradores />
+            </Combobox>
             <FieldError messages={errors?.employeeId} />
           </div>
         ) : (
@@ -186,7 +214,7 @@ export function EfetivoForm({
             <Input
               id="freelancerName"
               name="freelancerName"
-              defaultValue={efetivo?.freelancerName ?? ""}
+              defaultValue={efetivo.freelancerName ?? ""}
               placeholder="Nome completo do freelancer"
             />
             <FieldError
@@ -302,54 +330,10 @@ export function EfetivoForm({
           </label>
         </div>
 
-        {!efetivo && !isSemAlteracao && (
-          <div
-            className="space-y-3 rounded-lg bg-muted/50 p-4 sm:col-span-2"
-            data-tour="efet-documento"
-          >
-            <Label>Existe documento referente a este evento? *</Label>
-            <div className="flex items-center gap-6">
-              <Radio
-                name="temDocumento"
-                value="sim"
-                label="Sim"
-                checked={temDocumento === "sim"}
-                onChange={() => setTemDocumento("sim")}
-              />
-              <Radio
-                name="temDocumento"
-                value="nao"
-                label="Não"
-                checked={temDocumento === "nao"}
-                onChange={() => setTemDocumento("nao")}
-              />
-            </div>
-            <FieldError messages={errors?.temDocumento} />
-
-            {temDocumento === "sim" && (
-              <div className="space-y-2">
-                <Label htmlFor="documentoUrl">Link do documento *</Label>
-                <Input
-                  id="documentoUrl"
-                  name="documentoUrl"
-                  type="url"
-                  placeholder="https://..."
-                />
-                <FieldError messages={errors?.documentoUrl} />
-              </div>
-            )}
-            {temDocumento === "nao" && (
-              <p className="text-sm text-muted-foreground">
-                Uma pendência de documento será criada automaticamente para
-                acompanhamento em Pendências documentais.
-              </p>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="flex items-center gap-3">
-        <SubmitButton label={efetivo ? "Salvar alterações" : "Cadastrar"} />
+        <SubmitButton label="Salvar alterações" />
         <BackLink fallbackHref={`/rh/efetivos/${departmentId}`}>
           Cancelar
         </BackLink>
