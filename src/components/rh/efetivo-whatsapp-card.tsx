@@ -1,9 +1,10 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { Check, Copy } from "lucide-react"
+import { Check, Copy, Loader2, Send } from "lucide-react"
 import { toast } from "sonner"
 
+import { enviarEfetivoAoGrupo } from "@/lib/actions/efetivos"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -18,12 +19,18 @@ import { Textarea } from "@/components/ui/textarea"
 export function EfetivoWhatsappCard({
   periodo,
   message,
+  departmentId,
+  temGrupo,
 }: {
   periodo: string
   message: string
+  departmentId: string
+  temGrupo: boolean
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const [copied, setCopied] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+  const [enviado, setEnviado] = useState(false)
   // editável: dá para completar observações à mão antes de copiar
   const [texto, setTexto] = useState(message)
   const [msgAnterior, setMsgAnterior] = useState(message)
@@ -31,6 +38,24 @@ export function EfetivoWhatsappCard({
   if (message !== msgAnterior) {
     setMsgAnterior(message)
     setTexto(message)
+    setEnviado(false)
+  }
+
+  async function handleSend() {
+    setEnviando(true)
+    try {
+      const result = await enviarEfetivoAoGrupo(departmentId, texto)
+      if (!result.ok) {
+        toast.error(result.error || "Não foi possível enviar ao grupo.")
+        return
+      }
+      // marca a mensagem como já enviada — o efetivo muda ao longo do dia e é
+      // fácil reenviar o mesmo texto sem perceber
+      setEnviado(true)
+      toast.success("Efetivo enviado ao grupo do posto.")
+    } finally {
+      setEnviando(false)
+    }
   }
 
   async function handleCopy() {
@@ -73,17 +98,43 @@ export function EfetivoWhatsappCard({
           Efetivo {periodo === "NOTURNO" ? "noturno" : "diurno"}
         </CardTitle>
         <CardDescription>
-          Copie e cole no grupo do posto. O texto é editável antes de copiar.
+          {temGrupo
+            ? "Envie direto ao grupo do posto ou copie. O texto é editável antes de enviar."
+            : "Copie e cole no grupo do posto. O texto é editável antes de copiar."}
         </CardDescription>
         <CardAction>
-          <Button type="button" size="sm" onClick={handleCopy}>
-            {copied ? (
-              <Check className="size-4" />
-            ) : (
-              <Copy className="size-4" />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCopy}
+            >
+              {copied ? (
+                <Check className="size-4" />
+              ) : (
+                <Copy className="size-4" />
+              )}
+              {copied ? "Copiado!" : "Copiar"}
+            </Button>
+            {temGrupo && (
+              <Button
+                type="button"
+                size="sm"
+                disabled={enviando || texto.trim().length < 10}
+                onClick={handleSend}
+              >
+                {enviando ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : enviado ? (
+                  <Check className="size-4" />
+                ) : (
+                  <Send className="size-4" />
+                )}
+                {enviado ? "Enviado" : "Enviar ao grupo"}
+              </Button>
             )}
-            {copied ? "Copiado!" : "Copiar"}
-          </Button>
+          </div>
         </CardAction>
       </CardHeader>
       <CardContent>

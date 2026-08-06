@@ -13,6 +13,7 @@ import {
   efetivoCreateSchema,
   efetivoSchema,
 } from "@/lib/schemas"
+import { sendGroupText } from "@/lib/zapi"
 
 const DOCUMENTO_TIPO_EFETIVO = "Documento de efetivo"
 
@@ -193,6 +194,37 @@ export async function updateEfetivo(
   redirect(
     `/rh/efetivos/${parsed.data.departmentId}?date=${formatDateInput(parsed.data.date)}`
   )
+}
+
+// Envia o efetivo do turno ao grupo do posto. Ao contrário do relatório, aqui
+// não há fechamento nem código: o efetivo muda ao longo do dia, então o envio é
+// sempre um ato explícito do usuário (o botão), nunca automático.
+export async function enviarEfetivoAoGrupo(
+  departmentId: string,
+  message: string
+): Promise<{ ok: boolean; error?: string }> {
+  await requireSectorEdit("rh")
+
+  if (message.trim().length < 10) {
+    return { ok: false, error: "Mensagem vazia." }
+  }
+
+  const department = await prisma.department.findUnique({
+    where: { id: departmentId },
+    select: { name: true, whatsappGrupoId: true },
+  })
+  if (!department) return { ok: false, error: "Posto não encontrado." }
+  if (!department.whatsappGrupoId) {
+    return {
+      ok: false,
+      error: `${department.name} não tem grupo de WhatsApp cadastrado. Configure em Departamentos.`,
+    }
+  }
+
+  const result = await sendGroupText(department.whatsappGrupoId, message)
+  return result.ok
+    ? { ok: true }
+    : { ok: false, error: result.error ?? "Falha ao enviar." }
 }
 
 export async function deleteEfetivo(id: string): Promise<void> {

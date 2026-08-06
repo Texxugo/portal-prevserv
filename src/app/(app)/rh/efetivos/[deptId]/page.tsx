@@ -32,7 +32,7 @@ export default async function EfetivosDepartamentoPage({
   const [department, baseIds] = await Promise.all([
     prisma.department.findUnique({
       where: { id: deptId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, whatsappGrupoId: true },
     }),
     baseDepartmentIds(),
   ])
@@ -105,6 +105,12 @@ export default async function EfetivosDepartamentoPage({
         <ButtonLink variant="outline" href="/rh/efetivos">
           Todos os postos
         </ButtonLink>
+        <ButtonLink
+          variant="outline"
+          href={`/rh/efetivos/${department.id}/relatorio?date=${dateStr}`}
+        >
+          Relatório diário
+        </ButtonLink>
         <DateFilter value={dateStr} />
         {editable && (
           <ButtonLink
@@ -122,6 +128,8 @@ export default async function EfetivosDepartamentoPage({
               key={m.periodo}
               periodo={m.periodo}
               message={m.texto}
+              departmentId={department.id}
+              temGrupo={!!department.whatsappGrupoId}
             />
           ))}
         </div>

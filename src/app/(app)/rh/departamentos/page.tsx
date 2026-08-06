@@ -30,6 +30,7 @@ export default async function DepartamentosPage() {
           id: d.id,
           name: d.name,
           count: d._count.employees,
+          whatsappGrupoId: d.whatsappGrupoId,
         }))}
       />
     </div>

@@ -370,3 +370,130 @@ export const todoTaskSchema = z.object({
     .refine((v) => v === null || !isNaN(v.getTime()), "Data inválida"),
   priority: z.enum(TODO_PRIORITIES),
 })
+
+// ---------- Relatório diário por posto ----------
+// O formulário é grande e dinâmico (linhas de VTR, encomendas, vistorias), então
+// ele serializa cada bloco como JSON num campo só — mesmo padrão do lote de efetivos.
+const jsonArray = <T extends z.ZodTypeAny>(item: T) =>
+  z.preprocess((v) => {
+    if (typeof v !== "string") return v ?? []
+    try {
+      return JSON.parse(v)
+    } catch {
+      return []
+    }
+  }, z.array(item))
+
+// KM aceita "159.008", "159008" ou vazio.
+const kmField = z
+  .union([z.string(), z.number()])
+  .nullish()
+  .transform((v) => {
+    if (v === null || v === undefined || v === "") return null
+    const digits = String(v).replace(/[^\d]/g, "")
+    return digits ? Number(digits) : null
+  })
+  .refine((v) => v === null || Number.isFinite(v), "Quilometragem inválida")
+
+const relatorioVeiculoSchema = z
+  .object({
+    identificacao: z.string().trim().min(1, "Informe o veículo"),
+    placa: z.string().trim().min(1, "Informe a placa"),
+    kmInicial: kmField,
+    kmFinal: kmField,
+    kmProximaTroca: kmField,
+  })
+  .superRefine((d, ctx) => {
+    if (d.kmInicial !== null && d.kmFinal !== null && d.kmFinal < d.kmInicial) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["kmFinal"],
+        message: "KM final não pode ser menor que o inicial",
+      })
+    }
+  })
+
+const relatorioEncomendaSchema = z.object({
+  destinatario: z.string().trim().min(1, "Informe o destinatário"),
+  quadraLote: optionalNullableText,
+  codigos: z.string().trim().min(1, "Informe ao menos um código"),
+})
+
+const relatorioItemSchema = z.object({
+  secao: z.enum(["ESTATISTICA", "PORTARIA"]),
+  label: z.string().trim().min(1),
+  valor: z
+    .union([z.string(), z.number()])
+    .nullish()
+    .transform((v) => {
+      if (v === null || v === undefined || v === "") return null
+      const n = Number(String(v).replace(/[^\d-]/g, ""))
+      return Number.isFinite(n) ? n : null
+    }),
+  status: z.enum(["OK", "IRREGULAR", "NAO_APLICA"]).nullish(),
+  observacao: optionalNullableText,
+})
+
+const relatorioVistoriaSchema = z.object({
+  tipo: z.enum(["OBRA", "ESPACO"]),
+  titulo: z.string().trim().min(1, "Informe o título da vistoria"),
+  quadraLote: optionalNullableText,
+  endereco: optionalNullableText,
+  proprietario: optionalNullableText,
+  responsavel: optionalNullableText,
+  situacao: z.enum(["ANDAMENTO", "PARADA"]).nullish(),
+  apontamentos: z
+    .string()
+    .nullish()
+    .transform((v) => (v ?? "").trim()),
+  observacao: optionalNullableText,
+})
+
+const horaField = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v) => (v ? v : null))
+  .refine((v) => v === null || /^\d{2}:\d{2}$/.test(v), "Horário inválido")
+
+export const relatorioDiarioSchema = z.object({
+  departmentId: z.string().trim().min(1, "Posto inválido"),
+  date: requiredDate("Informe a data"),
+  periodo: z.enum(["DIURNO", "NOTURNO"]),
+  responsavel: optionalNullableText,
+  encomendasProxTurno: z
+    .union([z.string(), z.number()])
+    .nullish()
+    .transform((v) => {
+      if (v === null || v === undefined || v === "") return null
+      const n = Number(String(v).replace(/[^\d]/g, ""))
+      return Number.isFinite(n) ? n : null
+    }),
+  horaEncerramento: horaField,
+  postoPassadoPara: optionalNullableText,
+  observacoes: optionalNullableText,
+  mensagem: optionalNullableText,
+  veiculos: jsonArray(relatorioVeiculoSchema),
+  encomendas: jsonArray(relatorioEncomendaSchema),
+  itens: jsonArray(relatorioItemSchema),
+  vistorias: jsonArray(relatorioVistoriaSchema),
+})
+
+export type RelatorioDiarioInput = z.infer<typeof relatorioDiarioSchema>
+
+// Configuração dos itens de UMA seção do posto. A lista chega inteira e na
+// ordem da tela; rótulos repetidos são descartados porque cada item vira um
+// campo próprio no formulário (dois "Câmeras" seriam indistinguíveis).
+export const relatorioModeloSecaoSchema = z
+  .object({
+    departmentId: z.string().trim().min(1, "Posto inválido"),
+    secao: z.enum(["ESTATISTICA", "PORTARIA"]),
+    labels: z.array(z.string().trim().min(1, "Informe o texto do item")),
+  })
+  .transform((d) => ({
+    ...d,
+    labels: d.labels.filter(
+      (label, i, todos) =>
+        todos.findIndex((o) => o.toLowerCase() === label.toLowerCase()) === i
+    ),
+  }))

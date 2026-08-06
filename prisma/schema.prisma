@@ -29,38 +29,43 @@ model User {
 }
 
 model Department {
-  id        String     @id @default(cuid())
-  name      String     @unique
-  employees Employee[]
-  efetivos  Efetivo[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id              String                @id @default(cuid())
+  name            String                @unique
+  // Grupo de WhatsApp do posto (ID do grupo na Z-API, não telefone).
+  // Vazio = o relatório deste posto continua saindo por copiar e colar.
+  whatsappGrupoId String?
+  employees       Employee[]
+  efetivos        Efetivo[]
+  relatorios      RelatorioDiario[]
+  relatorioItens  RelatorioModeloItem[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 }
 
 model Employee {
-  id            String      @id @default(cuid())
-  name          String
-  matricula     String?     @unique
-  cpf           String?     @unique
-  email         String?
-  phone         String?
-  position      String?
-  departmentId  String?
-  department    Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  admissionDate DateTime?
-  salary        Float?
-  status        String      @default("ATIVO") // ATIVO | INATIVO | AFASTADO
-  workSchedule  String? // jornada semanal (JSON: { "0".."6": {entrada,almocoSaida,almocoVolta,saida}|null })
-  escalaId      String?
-  escala        Escala?     @relation(fields: [escalaId], references: [id], onDelete: SetNull)
-  escalaInicio  DateTime? // âncora do ciclo da escala
-  movements     Movement[]
-  fechamentos   EspelhoFechamento[]
+  id                 String               @id @default(cuid())
+  name               String
+  matricula          String?              @unique
+  cpf                String?              @unique
+  email              String?
+  phone              String?
+  position           String?
+  departmentId       String?
+  department         Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  admissionDate      DateTime?
+  salary             Float?
+  status             String               @default("ATIVO") // ATIVO | INATIVO | AFASTADO
+  workSchedule       String? // jornada semanal (JSON: { "0".."6": {entrada,almocoSaida,almocoVolta,saida}|null })
+  escalaId           String?
+  escala             Escala?              @relation(fields: [escalaId], references: [id], onDelete: SetNull)
+  escalaInicio       DateTime? // âncora do ciclo da escala
+  movements          Movement[]
+  fechamentos        EspelhoFechamento[]
   documentPendencias DocumentoPendencia[]
-  apontamentos  Apontamento[]
-  efetivos      Efetivo[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  apontamentos       Apontamento[]
+  efetivos           Efetivo[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   @@index([departmentId])
   @@index([matricula])
@@ -99,21 +104,21 @@ model Movement {
 // Colaborador cadastrado (employeeId) OU freelancer (freelancerName) — exatamente um.
 // Duplicados permitidos (mesma pessoa/data/período) — cobre troca de posto e extras.
 model Efetivo {
-  id             String     @id @default(cuid())
-  employeeId     String?
-  employee       Employee?  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  freelancerName String?
-  departmentId   String
-  department     Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
-  date           DateTime
-  horario        String?
-  local          String?
-  evento         String? // TT | TI | TE | TP | PI | Sem alteração (obrigatório no form; null só em legado)
-  periodo        String // DIURNO | NOTURNO
-  extra          Boolean    @default(false)
+  id                 String               @id @default(cuid())
+  employeeId         String?
+  employee           Employee?            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  freelancerName     String?
+  departmentId       String
+  department         Department           @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  date               DateTime
+  horario            String?
+  local              String?
+  evento             String? // TT | TI | TE | TP | PI | Sem alteração (obrigatório no form; null só em legado)
+  periodo            String // DIURNO | NOTURNO
+  extra              Boolean              @default(false)
   documentPendencias DocumentoPendencia[]
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   @@index([employeeId])
   @@index([departmentId])
@@ -121,17 +126,17 @@ model Efetivo {
 }
 
 model WhatsappMessageLog {
-  id           String   @id @default(cuid())
-  employeeId   String?
-  matricula    String?
-  employeeName String
-  phone        String
-  competencia  String
-  message      String
-  status       String // ENVIADO | ERRO
+  id             String   @id @default(cuid())
+  employeeId     String?
+  matricula      String?
+  employeeName   String
+  phone          String
+  competencia    String
+  message        String
+  status         String // ENVIADO | ERRO
   zaapiMessageId String?
-  error        String?
-  createdAt    DateTime @default(now())
+  error          String?
+  createdAt      DateTime @default(now())
 
   @@index([competencia])
   @@index([matricula])
@@ -328,50 +333,50 @@ model EspelhoCompetencia {
 }
 
 model EspelhoOcorrencia {
-  id                    String            @id @default(cuid())
-  fechamentoId          String
-  fechamento            EspelhoFechamento @relation(fields: [fechamentoId], references: [id], onDelete: Cascade)
-  data                  DateTime
-  tipo                  String // IMPAR | FALTA | ATRASO | SAIDA_ANTECIPADA | HORA_EXTRA | INTERVALO
-  detalhe               String
-  marcacoes             String
+  id                     String               @id @default(cuid())
+  fechamentoId           String
+  fechamento             EspelhoFechamento    @relation(fields: [fechamentoId], references: [id], onDelete: Cascade)
+  data                   DateTime
+  tipo                   String // IMPAR | FALTA | ATRASO | SAIDA_ANTECIPADA | HORA_EXTRA | INTERVALO
+  detalhe                String
+  marcacoes              String
   justificativaCategoria String?
-  justificativaObs      String?
-  resolvido             Boolean           @default(false)
-  documentPendencias    DocumentoPendencia[]
-  createdAt             DateTime          @default(now())
+  justificativaObs       String?
+  resolvido              Boolean              @default(false)
+  documentPendencias     DocumentoPendencia[]
+  createdAt              DateTime             @default(now())
 
   @@index([fechamentoId])
 }
 
 model DocumentoTipo {
-  id         String              @id @default(cuid())
-  name       String              @unique
-  active     Boolean             @default(true)
+  id         String               @id @default(cuid())
+  name       String               @unique
+  active     Boolean              @default(true)
   pendencias DocumentoPendencia[]
-  createdAt  DateTime            @default(now())
-  updatedAt  DateTime            @updatedAt
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
 }
 
 model DocumentoPendencia {
-  id             String              @id @default(cuid())
+  id             String                        @id @default(cuid())
   employeeId     String?
-  employee       Employee?           @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  employee       Employee?                     @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   employeeName   String
   matricula      String?
   competencia    String
   documentTypeId String
-  documentType   DocumentoTipo       @relation(fields: [documentTypeId], references: [id])
+  documentType   DocumentoTipo                 @relation(fields: [documentTypeId], references: [id])
   occurrenceId   String?
-  occurrence     EspelhoOcorrencia?  @relation(fields: [occurrenceId], references: [id], onDelete: SetNull)
+  occurrence     EspelhoOcorrencia?            @relation(fields: [occurrenceId], references: [id], onDelete: SetNull)
   efetivoId      String?
-  efetivo        Efetivo?            @relation(fields: [efetivoId], references: [id], onDelete: SetNull)
+  efetivo        Efetivo?                      @relation(fields: [efetivoId], references: [id], onDelete: SetNull)
   sourceDate     DateTime?
   sourceType     String?
   sourceDetail   String?
   reason         String
   notes          String?
-  status         String              @default("PENDENTE") // PENDENTE | SOLICITADO | RECEBIDO | CANCELADO
+  status         String                        @default("PENDENTE") // PENDENTE | SOLICITADO | RECEBIDO | CANCELADO
   followUpDate   DateTime
   externalUrl    String?
   requestedAt    DateTime?
@@ -380,8 +385,8 @@ model DocumentoPendencia {
   createdById    String
   createdByName  String
   history        DocumentoPendenciaHistorico[]
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
 
   @@index([employeeId])
   @@index([occurrenceId])
@@ -391,15 +396,165 @@ model DocumentoPendencia {
 }
 
 model DocumentoPendenciaHistorico {
-  id          String              @id @default(cuid())
+  id          String             @id @default(cuid())
   pendenciaId String
-  pendencia   DocumentoPendencia  @relation(fields: [pendenciaId], references: [id], onDelete: Cascade)
+  pendencia   DocumentoPendencia @relation(fields: [pendenciaId], references: [id], onDelete: Cascade)
   action      String
   description String?
   actorUserId String
   actorName   String
   metadata    String?
-  createdAt   DateTime            @default(now())
+  createdAt   DateTime           @default(now())
 
   @@index([pendenciaId, createdAt])
+}
+
+// ---------- Relatório diário por posto ----------
+// Um relatório por posto/data/turno: é o documento de passagem de serviço.
+// Os filhos (veículos, encomendas, itens, vistorias) são reescritos a cada
+// gravação — o formulário é a fonte da verdade, não há edição parcial.
+model RelatorioDiario {
+  id           String     @id @default(cuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  date         DateTime
+  periodo      String // DIURNO | NOTURNO
+
+  responsavel         String? // quem assina o relatório
+  encomendasProxTurno Int? // total repassado ao turno seguinte
+  horaEncerramento    String? // "06:00"
+  postoPassadoPara    String? // quem assume o posto
+  observacoes         String? // observações gerais / fecho do turno
+  mensagem            String? // texto final de WhatsApp, já revisado
+
+  // Rastreabilidade: o código só existe enquanto o relatório está FINALIZADO e
+  // é sorteado de novo a cada fechamento — código de uma versão reaberta e
+  // reeditada deixa de validar, então texto copiado/colado não se sustenta.
+  status            String    @default("RASCUNHO") // RASCUNHO | FINALIZADO
+  codigo            String?   @unique
+  finalizadoAt      DateTime?
+  finalizadoPorNome String?
+
+  // Envio automático ao grupo do posto. Guarda a última tentativa: com erro
+  // gravado, a tela oferece reenviar em vez de deixar o turno sem relatório.
+  enviadoAt        DateTime?
+  enviadoMessageId String?
+  enviadoErro      String?
+
+  veiculos     RelatorioVeiculo[]
+  encomendas   RelatorioEncomenda[]
+  itens        RelatorioItem[]
+  vistorias    RelatorioVistoria[]
+  verificacoes RelatorioVerificacao[]
+
+  createdById   String
+  createdByName String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([departmentId, date, periodo])
+  @@index([departmentId, date])
+}
+
+// KM inicial é sugerido a partir do kmFinal do relatório anterior da mesma
+// placa; kmRodado fica gravado para o texto do relatório não mudar depois.
+model RelatorioVeiculo {
+  id               String          @id @default(cuid())
+  relatorioId      String
+  relatorio        RelatorioDiario @relation(fields: [relatorioId], references: [id], onDelete: Cascade)
+  identificacao    String // "VTR CARRO MOBI" | "VTR MOTO BROS"
+  placa            String
+  placaNormalizada String // só letras/números em caixa alta — casa entre relatórios
+  kmInicial        Int?
+  kmFinal          Int?
+  kmRodado         Int?
+  kmProximaTroca   Int? // KM da próxima troca de óleo
+  ordem            Int             @default(0)
+
+  @@index([relatorioId])
+  @@index([placaNormalizada])
+}
+
+// Um destinatário pode ter vários códigos: `codigos` guarda um por linha.
+model RelatorioEncomenda {
+  id           String          @id @default(cuid())
+  relatorioId  String
+  relatorio    RelatorioDiario @relation(fields: [relatorioId], references: [id], onDelete: Cascade)
+  destinatario String
+  quadraLote   String?
+  codigos      String
+  ordem        Int             @default(0)
+
+  @@index([relatorioId])
+}
+
+// Estatísticas (valor numérico) e checklist da portaria (status + observação).
+// O `label` é copiado do modelo na gravação: se o modelo do posto mudar depois,
+// o relatório antigo continua com o texto que foi de fato preenchido.
+model RelatorioItem {
+  id          String          @id @default(cuid())
+  relatorioId String
+  relatorio   RelatorioDiario @relation(fields: [relatorioId], references: [id], onDelete: Cascade)
+  secao       String // ESTATISTICA | PORTARIA
+  label       String
+  ordem       Int             @default(0)
+  valor       Int? // ESTATISTICA
+  status      String? // PORTARIA: OK | IRREGULAR | NAO_APLICA
+  observacao  String?
+
+  @@index([relatorioId, secao])
+}
+
+// Blocos livres de vistoria. OBRA usa os campos de proprietário/endereço;
+// ESPACO (áreas comuns, quiosques, vias, CFTV…) usa só título + apontamentos.
+model RelatorioVistoria {
+  id           String          @id @default(cuid())
+  relatorioId  String
+  relatorio    RelatorioDiario @relation(fields: [relatorioId], references: [id], onDelete: Cascade)
+  tipo         String // OBRA | ESPACO
+  titulo       String
+  quadraLote   String?
+  endereco     String?
+  proprietario String?
+  responsavel  String? // ronda/líder que fez a vistoria
+  situacao     String? // OBRA: ANDAMENTO | PARADA
+  apontamentos String // um por linha
+  observacao   String?
+  ordem        Int             @default(0)
+
+  @@index([relatorioId, tipo])
+}
+
+// Rastro de auditoria das consultas de autenticidade. É este log que denuncia
+// código reaproveitado: o mesmo código conferido em dias diferentes, ou
+// conferido com um texto que não bate com o que foi gravado.
+// `codigo` fica solto (sem FK) de propósito — código inexistente também precisa
+// ser registrado, e é justamente o caso mais interessante.
+model RelatorioVerificacao {
+  id          String           @id @default(cuid())
+  codigo      String
+  resultado   String // INTEGRO | ALTERADO | NAO_ENCONTRADO
+  relatorioId String?
+  relatorio   RelatorioDiario? @relation(fields: [relatorioId], references: [id], onDelete: SetNull)
+  actorName   String
+  createdAt   DateTime         @default(now())
+
+  @@index([codigo, createdAt])
+  @@index([createdAt])
+}
+
+// Modelo configurável por posto: define quais estatísticas e quais itens de
+// checklist aparecem no formulário daquele posto.
+model RelatorioModeloItem {
+  id           String     @id @default(cuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  secao        String // ESTATISTICA | PORTARIA
+  label        String
+  ordem        Int        @default(0)
+  ativo        Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([departmentId, secao, ordem])
 }

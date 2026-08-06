@@ -5,7 +5,7 @@ const BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 export type CorrecaoResult = { ok: boolean; text?: string; error?: string }
 
-const SYSTEM_PROMPT = `Você é o revisor de português do setor de RH. Reescreva a mensagem que será enviada a um colaborador deixando-a clara, concisa e sem erros gramaticais, mantendo um tom cordial e formal.
+const PROMPT_MENSAGEM = `Você é o revisor de português do setor de RH. Reescreva a mensagem que será enviada a um colaborador deixando-a clara, concisa e sem erros gramaticais, mantendo um tom cordial e formal.
 
 Regras:
 - Preserve exatamente nomes de pessoas, datas, nomes de documentos e a competência (mês/ano).
@@ -13,7 +13,28 @@ Regras:
 - Mantenha o estilo das mensagens de RH, por exemplo: "Olá, Fulano! Precisamos do documento X referente à competência Maio/2026. Por favor, envie o documento por este contato. Em caso de dúvida, estamos à disposição neste contato. Obrigado!".
 - Responda APENAS com o texto corrigido, sem aspas e sem comentários.`
 
-export async function corrigirMensagem(input: string): Promise<CorrecaoResult> {
+const PROMPT_RELATORIO = `Você é o revisor dos relatórios operacionais de uma empresa de portaria e segurança patrimonial. Reescreva o trecho de relatório deixando-o correto, objetivo e profissional, no padrão de registro de ocorrência.
+
+Regras:
+- Não invente nada: nenhum fato, número, nome, local ou data que não esteja no texto original.
+- Preserve exatamente nomes de pessoas, datas, horários, placas, quilometragens, quadras, lotes, ruas e códigos.
+- Use terceira pessoa e tom impessoal ("Foi constatado…", "Informo que…"). Nada de gírias ou abreviações informais.
+- Seja conciso: elimine repetição e rodeio, sem perder nenhuma informação.
+- Corrija ortografia, acentuação, pontuação e concordância; padronize maiúsculas (não escreva frases inteiras em CAIXA ALTA).
+- Se o texto for uma lista de apontamentos, mantenha o formato de lista, um apontamento por linha, cada linha começando com "- ".
+- Responda APENAS com o texto corrigido, sem aspas, sem título e sem comentários.`
+
+export type CorrecaoModo = "mensagem" | "relatorio"
+
+const PROMPTS: Record<CorrecaoModo, string> = {
+  mensagem: PROMPT_MENSAGEM,
+  relatorio: PROMPT_RELATORIO,
+}
+
+export async function corrigirMensagem(
+  input: string,
+  modo: CorrecaoModo = "mensagem"
+): Promise<CorrecaoResult> {
   const key = process.env.GEMINI_API_KEY
   if (!key) {
     return {
@@ -35,7 +56,7 @@ export async function corrigirMensagem(input: string): Promise<CorrecaoResult> {
         "x-goog-api-key": key,
       },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        systemInstruction: { parts: [{ text: PROMPTS[modo] }] },
         contents: [{ role: "user", parts: [{ text }] }],
         generationConfig: { temperature: 0.3 },
       }),

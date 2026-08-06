@@ -8,6 +8,12 @@ import { requireSectorEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { toFieldErrors, type FormState } from "@/lib/form"
 import { departmentSchema, employeeSchema } from "@/lib/schemas"
+import {
+  isGrupoIdValido,
+  listGroups,
+  normalizeGrupoId,
+  type GrupoWhatsapp,
+} from "@/lib/zapi"
 
 // ---------- Colaboradores ----------
 export async function createEmployee(
@@ -87,6 +93,42 @@ export async function createDepartment(
 
   revalidatePath("/rh/departamentos")
   return { message: "ok" }
+}
+
+// Lista os grupos da conta conectada, para escolher o do posto sem precisar
+// descobrir o ID por fora. Consulta de leitura — não envia mensagem.
+export async function listarGruposWhatsapp(): Promise<{
+  ok: boolean
+  grupos?: GrupoWhatsapp[]
+  error?: string
+}> {
+  await requireSectorEdit("rh")
+  return listGroups()
+}
+
+// Grupo de WhatsApp do posto: destino do relatório diário ao ser finalizado.
+// Vazio remove o vínculo e o posto volta a depender de copiar e colar.
+export async function setDepartmentGrupo(
+  id: string,
+  grupoId: string
+): Promise<{ ok: boolean; error?: string }> {
+  await requireSectorEdit("rh")
+  const valor = grupoId.trim()
+
+  if (valor && !isGrupoIdValido(valor)) {
+    return {
+      ok: false,
+      error:
+        "ID de grupo inválido. Use o ID do grupo na Z-API (só números, com ou sem @g.us) — não o telefone.",
+    }
+  }
+
+  await prisma.department.update({
+    where: { id },
+    data: { whatsappGrupoId: valor ? normalizeGrupoId(valor) : null },
+  })
+  revalidatePath("/rh/departamentos")
+  return { ok: true }
 }
 
 export async function deleteDepartment(id: string): Promise<void> {
