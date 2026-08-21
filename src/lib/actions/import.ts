@@ -1,12 +1,11 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import type { z } from "zod"
 
 import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
-import { employeeSchema } from "@/lib/schemas"
-import { mapRow, normalizeKey, parseSheet } from "@/lib/import/parse-sheet"
+import { conciliarEmpregados, parseEmpregados } from "@/lib/import/empregados"
+import { parseSheetRows } from "@/lib/import/parse-sheet"
 
 export type ImportRowResult = {
   line: number
@@ -22,36 +21,12 @@ export type ImportState =
       validCount?: number
       errorCount?: number
       insertedCount?: number
+      updatedCount?: number
     }
   | undefined
 
-const EMPLOYEE_HEADERS: Record<string, string> = {
-  nome: "name",
-  matricula: "matricula",
-  cpf: "cpf",
-  email: "email",
-  "e-mail": "email",
-  telefone: "phone",
-  ramal: "phone",
-  "telefone/ramal": "phone",
-  cargo: "position",
-  departamento: "department",
-  admissao: "admissionDate",
-  "data de admissao": "admissionDate",
-  salario: "salary",
-  situacao: "status",
-  status: "status",
-}
-
-const FIELD_LABELS: Record<string, string> = {
-  name: "Nome",
-  matricula: "Matrícula",
-  cpf: "CPF",
-  email: "E-mail",
-  salary: "Salário",
-  status: "Situação",
-  admissionDate: "Admissão",
-}
+const LAYOUT_INVALIDO =
+  "Não foi possível reconhecer o layout. Use o relatório de empregados: a razão social abrindo cada bloco e o cabeçalho Código / Nome / Nº do C.P.F. acima das linhas."
 
 function readFile(formData: FormData): File | null {
   const file = formData.get("file")
@@ -65,78 +40,33 @@ export async function importEmployees(
 ): Promise<ImportState> {
   await requireModuloEdit("COLABORADORES")
   const file = readFile(formData)
-  if (!file) return { status: "error", message: "Selecione um arquivo .xlsx ou .csv." }
+  if (!file)
+    return { status: "error", message: "Selecione um arquivo .xls, .xlsx ou .csv." }
   const confirm = formData.get("confirm") === "1"
 
-  let raw: Record<string, unknown>[]
+  let sheet: string[][]
   try {
-    raw = await parseSheet(file)
+    sheet = await parseSheetRows(file)
   } catch {
     return { status: "error", message: "Não foi possível ler o arquivo." }
   }
-  if (raw.length === 0)
-    return { status: "error", message: "A planilha está vazia ou sem cabeçalho." }
+  if (sheet.length === 0) return { status: "error", message: "A planilha está vazia." }
 
-  const departments = await prisma.department.findMany()
-  const depByName = new Map(departments.map((d) => [normalizeKey(d.name), d.id]))
+  const registros = parseEmpregados(sheet)
+  if (registros.length === 0) return { status: "error", message: LAYOUT_INVALIDO }
 
-  const rows: ImportRowResult[] = []
-  const toInsert: z.infer<typeof employeeSchema>[] = []
-
-  raw.forEach((r, i) => {
-    const m = mapRow(r, EMPLOYEE_HEADERS)
-    const errors: string[] = []
-
-    const depName = m.department ?? ""
-    let departmentId = ""
-    if (depName) {
-      const found = depByName.get(normalizeKey(depName))
-      if (found) departmentId = found
-      else errors.push(`Departamento "${depName}" não encontrado`)
-    }
-
-    const candidate = {
-      name: m.name ?? "",
-      matricula: m.matricula ?? "",
-      cpf: m.cpf ?? "",
-      email: m.email ?? "",
-      phone: m.phone ?? "",
-      position: m.position ?? "",
-      departmentId,
-      admissionDate: m.admissionDate ?? "",
-      salary: m.salary ?? "",
-      status: m.status ? m.status.toUpperCase() : "ATIVO",
-    }
-
-    const parsed = employeeSchema.safeParse(candidate)
-    if (!parsed.success) {
-      for (const issue of parsed.error.issues) {
-        const key = issue.path[0] as string
-        errors.push(`${FIELD_LABELS[key] ?? key}: ${issue.message}`)
-      }
-    }
-
-    rows.push({
-      line: i + 2,
-      cells: {
-        name: candidate.name,
-        matricula: candidate.matricula,
-        cpf: candidate.cpf,
-        email: candidate.email,
-        phone: candidate.phone,
-        position: candidate.position,
-        department: depName,
-        admissionDate: candidate.admissionDate,
-        salary: candidate.salary,
-        status: candidate.status,
-      },
-      errors,
-    })
-
-    if (parsed.success && errors.length === 0) toInsert.push(parsed.data)
+  const cadastrados = await prisma.employee.findMany({
+    select: { id: true, name: true, empresa: true, cpf: true, matricula: true },
   })
+  const conciliados = conciliarEmpregados(registros, cadastrados)
 
-  const validCount = toInsert.length
+  const rows: ImportRowResult[] = conciliados.map((c) => ({
+    line: c.linha,
+    cells: c.cells,
+    errors: c.errors,
+  }))
+  const aplicar = conciliados.filter((c) => c.errors.length === 0)
+  const validCount = aplicar.length
   const errorCount = rows.length - validCount
 
   if (!confirm) {
@@ -144,14 +74,35 @@ export async function importEmployees(
   }
 
   let inserted = 0
-  for (const data of toInsert) {
+  let updated = 0
+  for (const item of aplicar) {
+    // Sexo só entra quando o arquivo trouxe a coluna: sem ela, o valor vazio
+    // apagaria o que já estava preenchido no cadastro.
+    const data = {
+      name: item.cells.name,
+      empresa: item.cells.empresa || null,
+      matricula: item.cells.matricula || null,
+      cpf: item.cells.cpf || null,
+      ...(item.cells.sexo ? { sexo: item.cells.sexo } : {}),
+    }
     try {
-      await prisma.employee.create({ data })
-      inserted++
+      if (item.alvoId) {
+        await prisma.employee.update({ where: { id: item.alvoId }, data })
+        updated++
+      } else {
+        await prisma.employee.create({ data })
+        inserted++
+      }
     } catch {
       // ignora duplicados/erros pontuais
     }
   }
   revalidatePath("/rh")
-  return { status: "done", insertedCount: inserted, validCount, errorCount }
+  return {
+    status: "done",
+    insertedCount: inserted,
+    updatedCount: updated,
+    validCount,
+    errorCount,
+  }
 }

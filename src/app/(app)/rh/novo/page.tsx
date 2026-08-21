@@ -1,6 +1,6 @@
 import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
-import { filtroPostoId, podeVerSalario } from "@/lib/permissions"
+import { filtroPostoId } from "@/lib/permissions"
 import { PageHeader } from "@/components/layout/page-header"
 import { EmployeeForm } from "@/components/rh/employee-form"
 
@@ -21,11 +21,7 @@ export default async function NovoColaboradorPage() {
         title="Novo colaborador"
         description="Preencha os dados do colaborador."
       />
-      <EmployeeForm
-        departments={departments}
-        escalas={escalas}
-        canViewSalary={podeVerSalario(user)}
-      />
+      <EmployeeForm departments={departments} escalas={escalas} />
     </div>
   )
 }

@@ -66,11 +66,11 @@ async function main() {
   if ((await prisma.employee.count()) === 0) {
     await prisma.employee.createMany({
       data: [
-        { name: "Ana Souza", cpf: "111.111.111-11", email: "ana@empresa.com", phone: "1001", position: "Analista de RH", departmentId: depId("Pessoas"), salary: 5200, status: "ATIVO", admissionDate: new Date("2022-03-01") },
-        { name: "Bruno Lima", cpf: "222.222.222-22", email: "bruno@empresa.com", phone: "1002", position: "Desenvolvedor", departmentId: depId("Tecnologia"), salary: 8500, status: "ATIVO", admissionDate: new Date("2021-07-15") },
-        { name: "Carla Dias", cpf: "333.333.333-33", email: "carla@empresa.com", phone: "1003", position: "Gerente Comercial", departmentId: depId("Comercial"), salary: 12000, status: "ATIVO", admissionDate: new Date("2020-01-10") },
-        { name: "Diego Alves", cpf: "444.444.444-44", email: "diego@empresa.com", phone: "1004", position: "Analista Financeiro", departmentId: depId("Financeiro"), salary: 6300, status: "AFASTADO", admissionDate: new Date("2023-09-05") },
-        { name: "Elaine Rocha", cpf: "555.555.555-55", email: "elaine@empresa.com", phone: "1005", position: "Assistente Operacional", departmentId: depId("Operações"), salary: 3200, status: "INATIVO", admissionDate: new Date("2019-11-20") },
+        { name: "Ana Souza", empresa: "Prevserv", cpf: "111.111.111-11", matricula: "1001", phone: "1001", departmentId: depId("Pessoas"), status: "ATIVO" },
+        { name: "Bruno Lima", empresa: "Prevserv", cpf: "222.222.222-22", matricula: "1002", phone: "1002", departmentId: depId("Tecnologia"), status: "ATIVO" },
+        { name: "Carla Dias", empresa: "Prevserv", cpf: "333.333.333-33", matricula: "1003", phone: "1003", departmentId: depId("Comercial"), status: "ATIVO" },
+        { name: "Diego Alves", empresa: "Prevserv", cpf: "444.444.444-44", matricula: "1004", phone: "1004", departmentId: depId("Financeiro"), status: "AFASTADO" },
+        { name: "Elaine Rocha", empresa: "Prevserv", cpf: "555.555.555-55", matricula: "1005", phone: "1005", departmentId: depId("Operações"), status: "INATIVO" },
       ],
     })
   }

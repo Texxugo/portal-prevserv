@@ -3,6 +3,7 @@ import { Role } from "@prisma/client"
 // Módulo = uma área do sistema que se libera ou se nega por usuário. A chave é
 // gravada em UserModulo.modulo, então renomear uma chave exige migração.
 export const MODULO_KEYS = [
+  "PAINEL",
   "EFETIVOS",
   "RELATORIOS",
   "COLABORADORES",
@@ -33,6 +34,15 @@ export type ModuloDef = {
 
 export const MODULOS: ModuloDef[] = [
   {
+    key: "PAINEL",
+    label: "Painel operacional",
+    descricao:
+      "Mapa dos postos e dos colaboradores, baixas do dia e convocação de extra.",
+    grupo: "Operação",
+    porPosto: true,
+    edicaoLabel: "Marcar baixa e convocar para extra",
+  },
+  {
     key: "EFETIVOS",
     label: "Efetivos",
     descricao: "Efetivo diário do posto e ausências de cadastro.",
@@ -59,10 +69,10 @@ export const MODULOS: ModuloDef[] = [
   {
     key: "COLABORADORES",
     label: "Colaboradores",
-    descricao: "Cadastro de funcionários, importação e salários.",
+    descricao: "Cadastro de funcionários e importação.",
     grupo: "RH",
     porPosto: true,
-    edicaoLabel: "Cadastrar, editar e ver salário",
+    edicaoLabel: "Cadastrar e editar colaboradores",
   },
   {
     key: "ESCALAS",
@@ -183,11 +193,6 @@ export function podeEditar(
   if (!access) return false
   if (isAdmin(access)) return true
   return access.modulos.some((m) => m.modulo === modulo && m.editar)
-}
-
-// Salário é o campo sensível do cadastro: acompanha a edição de Colaboradores.
-export function podeVerSalario(access: Access | null | undefined): boolean {
-  return podeEditar(access, "COLABORADORES")
 }
 
 export function verTodosPostos(access: Access | null | undefined): boolean {

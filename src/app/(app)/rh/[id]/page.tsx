@@ -2,14 +2,11 @@ import { notFound } from "next/navigation"
 
 import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
-import {
-  filtroPostoId,
-  podeVerPosto,
-  podeVerSalario,
-} from "@/lib/permissions"
+import { filtroPostoId, podeVerPosto } from "@/lib/permissions"
 import { formatDateInput } from "@/lib/format"
 import { PageHeader } from "@/components/layout/page-header"
 import { EmployeeForm, type EmployeeValues } from "@/components/rh/employee-form"
+import { WhatsappOptOut } from "@/components/rh/whatsapp-optout"
 
 export default async function EditarColaboradorPage({
   params,
@@ -36,16 +33,21 @@ export default async function EditarColaboradorPage({
   const values: EmployeeValues = {
     id: employee.id,
     name: employee.name,
+    empresa: employee.empresa,
     matricula: employee.matricula,
     cpf: employee.cpf,
-    email: employee.email,
     phone: employee.phone,
-    position: employee.position,
+    sexo: employee.sexo,
+    endereco: employee.endereco,
+    cep: employee.cep,
+    logradouro: employee.logradouro,
+    numero: employee.numero,
+    complemento: employee.complemento,
+    bairro: employee.bairro,
+    cidade: employee.cidade,
+    uf: employee.uf,
     departmentId: employee.departmentId,
-    admissionDate: formatDateInput(employee.admissionDate) || null,
-    salary: employee.salary,
     status: employee.status,
-    workSchedule: employee.workSchedule,
     escalaId: employee.escalaId,
     escalaInicio: formatDateInput(employee.escalaInicio) || null,
   }
@@ -57,7 +59,11 @@ export default async function EditarColaboradorPage({
         departments={departments}
         escalas={escalas}
         employee={values}
-        canViewSalary={podeVerSalario(user)}
+      />
+      <WhatsappOptOut
+        employeeId={employee.id}
+        optOut={employee.whatsappOptOut}
+        desde={employee.whatsappOptOutAt?.toISOString() ?? null}
       />
     </div>
   )

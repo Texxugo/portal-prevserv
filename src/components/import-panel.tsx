@@ -57,17 +57,17 @@ function SubmitButton({
 export function ImportPanel({
   action,
   columns,
+  hint,
   templateName,
-  templateHeaders,
-  templateExample,
+  templateRows,
   backHref,
   backLabel,
 }: {
   action: ImportAction
   columns: { key: string; label: string }[]
+  hint: string
   templateName: string
-  templateHeaders: string[]
-  templateExample: string[]
+  templateRows: string[][]
   backHref: string
   backLabel: string
 }) {
@@ -77,7 +77,7 @@ export function ImportPanel({
   )
 
   function downloadTemplate() {
-    const csv = [templateHeaders.join(","), templateExample.join(",")].join("\n")
+    const csv = templateRows.map((row) => row.join(",")).join("\n")
     const blob = new Blob(["﻿" + csv], {
       type: "text/csv;charset=utf-8;",
     })
@@ -96,7 +96,7 @@ export function ImportPanel({
         className="space-y-4 rounded-xl bg-card p-6 ring-1 ring-foreground/10"
       >
         <div className="space-y-2">
-          <Label htmlFor="file">Arquivo (.xlsx ou .csv)</Label>
+          <Label htmlFor="file">Arquivo (.xls, .xlsx ou .csv)</Label>
           <Input
             id="file"
             name="file"
@@ -104,10 +104,7 @@ export function ImportPanel({
             accept=".xlsx,.xls,.csv"
             required
           />
-          <p className="text-sm text-muted-foreground">
-            A primeira linha deve conter os cabeçalhos. Baixe o modelo para
-            garantir as colunas corretas.
-          </p>
+          <p className="text-sm text-muted-foreground">{hint}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -139,7 +136,9 @@ export function ImportPanel({
         <div className="space-y-3">
           <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="size-4" />
-            {state.insertedCount} registro(s) importado(s) com sucesso.
+            {state.insertedCount} cadastrado(s)
+            {state.updatedCount != null && ` e ${state.updatedCount} atualizado(s)`}
+            {" com sucesso."}
             {(state.errorCount ?? 0) > 0 &&
               ` ${state.errorCount} linha(s) ignorada(s) por erros.`}
           </div>

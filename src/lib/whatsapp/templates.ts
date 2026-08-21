@@ -373,3 +373,69 @@ export function comRodapeAutenticidade(
   if (!codigo) return texto
   return `${texto.trimEnd()}\n\n${rodapeAutenticidade(codigo)}`
 }
+
+// ---------- Convocação para extra (painel operacional) ----------
+// Fora do esqueleto de buildColaboradorMessage de propósito: aqui a mensagem
+// termina numa PERGUNTA com opções numeradas, e um fecho genérico depois das
+// opções faria o colaborador responder texto livre em vez do número.
+
+// A distância NÃO entra na mensagem de propósito: dizer ao colaborador quanto
+// ele mora do posto revela que o sistema sabe onde ele mora, e assusta mais do
+// que ajuda. O número continua gravado no convite, para o painel ordenar quem
+// está mais perto — é informação de quem convoca, não de quem recebe.
+export type ConviteExtraMsg = {
+  nome: string
+  posto: string
+  data: string
+  periodo: string
+  horario?: string | null
+}
+
+export function buildConviteExtraMessage(input: ConviteExtraMsg): string {
+  const linhas = [
+    `📍 Posto: ${input.posto}`,
+    `📅 Data: ${input.data} (${input.periodo.toLowerCase()})`,
+    input.horario ? `🕐 Horário: ${input.horario}` : null,
+  ].filter(Boolean)
+
+  return [
+    `Olá, ${input.nome}!`,
+    "",
+    "Temos uma oportunidade de trabalho extra:",
+    linhas.join("\n"),
+    "",
+    "Você pode assumir?",
+    "*1* - Aceitar",
+    "*2* - Recusar",
+    "*3* - Não receber mais mensagens",
+    "",
+    "Responda com o número da opção.",
+  ].join("\n")
+}
+
+export function buildDeslocamentoMessage(nome: string): string {
+  return [
+    `Obrigado, ${nome}! Cobertura confirmada.`,
+    "",
+    "Só falta uma coisa: você precisa de deslocamento até o posto?",
+    "*1* - Sim, preciso",
+    "*2* - Não, tenho como ir",
+  ].join("\n")
+}
+
+export function buildConfirmacaoExtraMessage(
+  nome: string,
+  precisaDeslocamento: boolean
+): string {
+  return precisaDeslocamento
+    ? `Anotado, ${nome}. Registramos que você precisa de deslocamento — a supervisão entra em contato para combinar. Até lá!`
+    : `Tudo certo, ${nome}. Você está confirmado no extra. Bom trabalho!`
+}
+
+export function buildRecusaExtraMessage(nome: string): string {
+  return `Obrigado pelo retorno, ${nome}! Registramos que desta vez não será possível. Na próxima oportunidade avisamos você.`
+}
+
+export function buildOptOutMessage(nome: string): string {
+  return `Obrigado pelo retorno, ${nome}! Você não receberá mais convites de extra por aqui. Se mudar de ideia, é só avisar a supervisão que reativamos.`
+}

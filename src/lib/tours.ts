@@ -54,17 +54,17 @@ export const TOURS: Tour[] = [
       {
         target: '[data-tour="rh-tabela"]',
         title: "Colaboradores",
-        text: "Aqui ficam todos os colaboradores, com cargo, departamento e situação. Use a busca para localizar alguém.",
+        text: "Aqui ficam todos os colaboradores, com empresa, matrícula, departamento e situação. Use a busca para localizar alguém.",
       },
       {
         target: '[data-tour="rh-novo"]',
         title: "Novo colaborador",
-        text: "Cadastre um colaborador manualmente, com dados pessoais, jornada e escala.",
+        text: "Cadastre um colaborador manualmente: nome, empresa, matrícula, CPF, escala, departamento, endereço e situação.",
       },
       {
         target: '[data-tour="rh-importar"]',
         title: "Importação em lote",
-        text: "Ou importe vários colaboradores de uma vez a partir de planilha.",
+        text: "Ou importe vários de uma vez pelo relatório de empregados da folha (nome, empresa, matrícula e CPF).",
       },
       {
         target: '[data-tour="rh-departamentos"]',

@@ -18,12 +18,12 @@ enum Role {
 }
 
 model User {
-  id       String  @id @default(cuid())
-  name     String
-  email    String  @unique
-  password String
-  role     Role    @default(VIEWER)
-  active   Boolean @default(true)
+  id          String  @id @default(cuid())
+  name        String
+  email       String  @unique
+  password    String
+  role        Role    @default(VIEWER)
+  active      Boolean @default(true)
   // true = enxerga todos os postos; false = só os postos ligados em departments.
   // ADMIN ignora este campo (vê tudo por definição do perfil).
   todosPostos Boolean @default(false)
@@ -84,12 +84,25 @@ model Department {
   // Grupo de WhatsApp do posto (ID do grupo na Z-API, não telefone).
   // Vazio = o relatório deste posto continua saindo por copiar e colar.
   whatsappGrupoId String?
+  // Endereço do posto — alimenta o alfinete no painel operacional.
+  cep             String?
+  logradouro      String?
+  numero          String?
+  complemento     String?
+  bairro          String?
+  cidade          String?
+  uf              String?
+  lat             Float?
+  lng             Float?
+  geocodedAt      DateTime?
+  geocodeStatus   String? // OK | NAO_ENCONTRADO | ERRO
   employees       Employee[]
   efetivos        Efetivo[]
   conferencias    EfetivoConferencia[]
   relatorios      RelatorioDiario[]
   relatorioItens  RelatorioModeloItem[]
   usuarios        UserDepartment[]
+  vagas           CoberturaVaga[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 }
@@ -97,17 +110,34 @@ model Department {
 model Employee {
   id                 String               @id @default(cuid())
   name               String
-  matricula          String?              @unique
+  empresa            String? // razão social do empregador (texto livre — vem agrupada no import)
+  // A matrícula só é única DENTRO da empresa: empresas diferentes reusam o mesmo
+  // número (545 aparece em 3 empregadores). Ver @@unique([empresa, matricula]).
+  matricula          String?
   cpf                String?              @unique
-  email              String?
   phone              String?
-  position           String?
+  // M | F — referência visual do ícone no painel operacional. Null = neutro.
+  sexo               String?
+  // Texto livre do cadastro antigo. Continua valendo como último recurso da
+  // geocodificação quando os campos estruturados abaixo estão vazios.
+  endereco           String?
+  cep                String?
+  logradouro         String?
+  numero             String?
+  complemento        String?
+  bairro             String?
+  cidade             String?
+  uf                 String?
+  lat                Float?
+  lng                Float?
+  geocodedAt         DateTime?
+  geocodeStatus      String? // OK | NAO_ENCONTRADO | ERRO
+  // Pediu para não receber mais convite de extra pelo WhatsApp.
+  whatsappOptOut     Boolean              @default(false)
+  whatsappOptOutAt   DateTime?
   departmentId       String?
   department         Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  admissionDate      DateTime?
-  salary             Float?
   status             String               @default("ATIVO") // ATIVO | INATIVO | AFASTADO
-  workSchedule       String? // jornada semanal (JSON: { "0".."6": {entrada,almocoSaida,almocoVolta,saida}|null })
   escalaId           String?
   escala             Escala?              @relation(fields: [escalaId], references: [id], onDelete: SetNull)
   escalaInicio       DateTime? // âncora do ciclo da escala
@@ -116,9 +146,13 @@ model Employee {
   documentPendencias DocumentoPendencia[]
   apontamentos       Apontamento[]
   efetivos           Efetivo[]
+  vagasAusencia      CoberturaVaga[]      @relation("VagaAusente")
+  vagasCobertas      CoberturaVaga[]      @relation("VagaCobertura")
+  convites           CoberturaConvite[]
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
 
+  @@unique([empresa, matricula])
   @@index([departmentId])
   @@index([matricula])
   @@index([escalaId])
@@ -134,17 +168,18 @@ model Escala {
 }
 
 model Movement {
-  id          String    @id @default(cuid())
+  id          String          @id @default(cuid())
   employeeId  String
-  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee    Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   type        String // FALTA | FERIAS | CONTRATACAO | DEMISSAO
   justificada Boolean? // só para FALTA
   startDate   DateTime
   endDate     DateTime?
   note        String?
   competencia String? // "YYYY-MM" (mês de fechamento, regra 21-20) — derivado de startDate
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  vagas       CoberturaVaga[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   @@index([employeeId])
   @@index([type])
@@ -628,4 +663,83 @@ model RelatorioModeloItem {
   updatedAt    DateTime   @updatedAt
 
   @@index([departmentId, secao, ordem])
+}
+
+// ---------- Painel operacional: baixas e convocação ----------
+
+// Baixa em aberto num posto: o turno tem uma posição a cobrir.
+// Nasce de duas formas — marcada à mão no painel ou confirmada a partir de uma
+// sugestão gerada por um Movement de falta/férias sem substituto no efetivo.
+// A sugestão NÃO vira linha sozinha: só o que alguém confirmou vira vaga.
+model CoberturaVaga {
+  id           String     @id @default(cuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  date         DateTime
+  periodo      String // DIURNO | NOTURNO
+  horario      String?
+  motivo       String // FALTA | ATESTADO | FERIAS | AFASTAMENTO | EXTRA | OUTRO
+  observacao   String?
+
+  // Origem da sugestão automática. Guardada para não sugerir de novo a mesma
+  // ausência depois que a vaga já foi criada.
+  origemMovementId String?
+  origemMovement   Movement? @relation(fields: [origemMovementId], references: [id], onDelete: SetNull)
+  ausenteId        String?
+  ausente          Employee? @relation("VagaAusente", fields: [ausenteId], references: [id], onDelete: SetNull)
+
+  status String @default("ABERTA") // ABERTA | PREENCHIDA | CANCELADA
+
+  // Quem acabou cobrindo, quando a vaga fechou.
+  cobertaPorId String?
+  cobertaPor   Employee? @relation("VagaCobertura", fields: [cobertaPorId], references: [id], onDelete: SetNull)
+  cobertaEm    DateTime?
+  // Efetivo (extra) gerado ao fechar a vaga — permite desfazer junto.
+  efetivoId    String?
+
+  criadaPor String
+  convites  CoberturaConvite[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([departmentId, date])
+  @@index([status, date])
+  @@index([origemMovementId])
+}
+
+// Convite de extra enviado a um colaborador por WhatsApp.
+// `etapa` é o que o webhook consulta para saber o que fazer com a próxima
+// mensagem que chegar daquele telefone: interpretar aceite/recusa ou a
+// resposta sobre deslocamento.
+model CoberturaConvite {
+  id         String        @id @default(cuid())
+  vagaId     String
+  vaga       CoberturaVaga @relation(fields: [vagaId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  phone      String
+
+  status String @default("ENVIADO") // ENVIADO | ERRO | ACEITO | RECUSADO | OPTOUT | CANCELADO
+  // Por onde a mensagem saiu: BOTOES | TEXTO. Botão aceito pela Z-API pode ser
+  // descartado pelo WhatsApp sem aviso, então isto é a primeira pista de um
+  // "não recebi".
+  canal  String @default("TEXTO")
+  etapa  String @default("AGUARDANDO_RESPOSTA") // AGUARDANDO_RESPOSTA | AGUARDANDO_DESLOCAMENTO | CONCLUIDO
+
+  precisaDeslocamento Boolean?
+  // Distância em linha reta no momento do convite — congelada aqui porque o
+  // endereço do colaborador pode mudar depois.
+  distanciaKm         Float?
+
+  enviadoAt      DateTime  @default(now())
+  respondidoAt   DateTime?
+  respostaTexto  String?
+  zaapiMessageId String?
+  erro           String?
+  criadoPor      String
+
+  @@index([vagaId])
+  @@index([employeeId])
+  @@index([phone, etapa])
+  @@index([status])
 }

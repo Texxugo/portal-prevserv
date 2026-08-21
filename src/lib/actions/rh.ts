@@ -6,6 +6,8 @@ import { Prisma } from "@prisma/client"
 
 import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
+import { normalizeCep } from "@/lib/geo/endereco"
+import { geocodificarEmployee } from "@/lib/geo/geocodificar"
 import { toFieldErrors, type FormState } from "@/lib/form"
 import { podeVerPosto } from "@/lib/permissions"
 import { departmentSchema, employeeSchema } from "@/lib/schemas"
@@ -17,6 +19,37 @@ import {
 } from "@/lib/zapi"
 
 const POSTO_FORA_DO_ACESSO = "Este posto não está no seu acesso."
+
+// Campos que, mudando, invalidam a coordenada guardada.
+const CAMPOS_ENDERECO = [
+  "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "uf", "endereco",
+] as const
+
+type CamposEndereco = Partial<Record<(typeof CAMPOS_ENDERECO)[number], string | null>>
+
+function normalizarEndereco<T extends CamposEndereco>(dados: T): T {
+  return {
+    ...dados,
+    cep: dados.cep ? normalizeCep(dados.cep) : null,
+    uf: dados.uf ? dados.uf.toUpperCase() : null,
+  }
+}
+
+function enderecoMudou(antes: CamposEndereco, depois: CamposEndereco): boolean {
+  return CAMPOS_ENDERECO.some((c) => (antes[c] ?? "") !== (depois[c] ?? ""))
+}
+
+// A geocodificação roda junto com o salvamento (uma chamada ao Nominatim, ~1s)
+// para que o alfinete apareça no painel sem depender de um segundo clique. O
+// erro não derruba o cadastro: o endereço fica salvo e a tela de colaboradores
+// mostra quem ficou sem localização.
+async function localizarNoMapa(id: string) {
+  try {
+    await geocodificarEmployee(id)
+  } catch (e) {
+    console.error("[rh] falha ao geocodificar colaborador:", e)
+  }
+}
 
 // ---------- Colaboradores ----------
 export async function createEmployee(
@@ -31,13 +64,23 @@ export async function createEmployee(
     return { errors: { departmentId: [POSTO_FORA_DO_ACESSO] } }
   }
 
+  const dados = normalizarEndereco(parsed.data)
+
   try {
-    await prisma.employee.create({ data: parsed.data })
+    const criado = await prisma.employee.create({
+      data: dados,
+      select: { id: true },
+    })
+    await localizarNoMapa(criado.id)
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       const target = String(e.meta?.target ?? "")
       if (target.includes("matricula")) {
-        return { errors: { matricula: ["Já existe um colaborador com esta matrícula."] } }
+        return {
+          errors: {
+            matricula: ["Já existe um colaborador com esta matrícula nesta empresa."],
+          },
+        }
       }
       return { errors: { cpf: ["Já existe um colaborador com este CPF."] } }
     }
@@ -59,7 +102,10 @@ export async function updateEmployee(
 
   const atual = await prisma.employee.findUnique({
     where: { id },
-    select: { departmentId: true },
+    select: {
+      departmentId: true, cep: true, logradouro: true, numero: true,
+      complemento: true, bairro: true, cidade: true, uf: true, endereco: true,
+    },
   })
   // Vale para a origem e para o destino: tirar alguém de um posto fora do
   // escopo é tão indevido quanto trazê-lo para dentro dele.
@@ -71,13 +117,26 @@ export async function updateEmployee(
     return { errors: { departmentId: [POSTO_FORA_DO_ACESSO] } }
   }
 
+  const dados = normalizarEndereco(parsed.data)
+  const mudou = enderecoMudou(atual, dados)
+
   try {
-    await prisma.employee.update({ where: { id }, data: parsed.data })
+    await prisma.employee.update({
+      where: { id },
+      data: mudou
+        ? { ...dados, lat: null, lng: null, geocodedAt: null, geocodeStatus: null }
+        : dados,
+    })
+    if (mudou) await localizarNoMapa(id)
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       const target = String(e.meta?.target ?? "")
       if (target.includes("matricula")) {
-        return { errors: { matricula: ["Já existe um colaborador com esta matrícula."] } }
+        return {
+          errors: {
+            matricula: ["Já existe um colaborador com esta matrícula nesta empresa."],
+          },
+        }
       }
       return { errors: { cpf: ["Já existe um colaborador com este CPF."] } }
     }

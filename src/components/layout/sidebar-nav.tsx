@@ -15,6 +15,7 @@ import {
   FileClock,
   FileWarning,
   LayoutDashboard,
+  MapPinned,
   Repeat,
   Shield,
   ShieldCheck,
@@ -63,6 +64,13 @@ type NavEntry =
 
 const NAV: NavEntry[] = [
   { kind: "item", href: "/", label: "Dashboard", icon: LayoutDashboard, modulo: null },
+  {
+    kind: "item",
+    href: "/operacional",
+    label: "Painel operacional",
+    icon: MapPinned,
+    modulo: "PAINEL",
+  },
   {
     kind: "item",
     href: "/tarefas",

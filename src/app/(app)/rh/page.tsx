@@ -2,28 +2,31 @@ import { Building, Plus, Upload } from "lucide-react"
 
 import { requireModulo } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
-import { filtroDepartmentId, podeEditar, podeVerSalario } from "@/lib/permissions"
+import { contarPendentesGeocode } from "@/lib/geo/geocodificar"
+import { filtroDepartmentId, podeEditar } from "@/lib/permissions"
 import { buildDayResolver, hasResolverSchedule } from "@/lib/jornada"
 import { PageHeader } from "@/components/layout/page-header"
 import { ButtonLink } from "@/components/button-link"
 import { EmployeesTable, type EmployeeRow } from "@/components/rh/employees-table"
+import { LocalizarPendentes } from "@/components/rh/department-endereco"
 
 export default async function RhPage() {
   const user = await requireModulo("COLABORADORES")
   const editable = podeEditar(user, "COLABORADORES")
-  const showSalary = podeVerSalario(user)
 
-  const employees = await prisma.employee.findMany({
-    where: filtroDepartmentId(user),
-    orderBy: { name: "asc" },
-    include: { department: true, escala: { select: { cycleDays: true } } },
-  })
+  const [employees, pendentes] = await Promise.all([
+    prisma.employee.findMany({
+      where: filtroDepartmentId(user),
+      orderBy: { name: "asc" },
+      include: { department: true, escala: { select: { cycleDays: true } } },
+    }),
+    contarPendentesGeocode(),
+  ])
 
   const hoje = new Date()
 
   const data: EmployeeRow[] = employees.map((e) => {
     const source = {
-      workSchedule: e.workSchedule,
       escalaInicio: e.escalaInicio,
       escala: e.escala ? { cycleDays: e.escala.cycleDays } : null,
     }
@@ -34,14 +37,18 @@ export default async function RhPage() {
     return {
       id: e.id,
       name: e.name,
+      empresa: e.empresa,
+      matricula: e.matricula,
       cpf: e.cpf,
-      email: e.email,
       phone: e.phone,
-      position: e.position,
       department: e.department?.name ?? null,
       status: e.status,
-      salary: showSalary ? e.salary : null,
       onDutyToday,
+      // Só é "fora do mapa" quem tem endereço e mesmo assim não virou
+      // coordenada — quem nunca preencheu nada não precisa de alerta.
+      semLocalizacao:
+        e.lat === null && !!(e.cep || e.logradouro || e.endereco),
+      optOut: e.whatsappOptOut,
     }
   })
 
@@ -49,7 +56,7 @@ export default async function RhPage() {
     <div>
       <PageHeader
         title="RH / Pessoas"
-        description="Colaboradores, cargos e situação."
+        description="Colaboradores, empresas e situação."
       >
         {editable && (
           <>
@@ -77,12 +84,14 @@ export default async function RhPage() {
         )}
       </PageHeader>
 
+      {editable && (
+        <div className="mb-4">
+          <LocalizarPendentes alvo="COLABORADORES" pendentes={pendentes.colaboradores} />
+        </div>
+      )}
+
       <div data-tour="rh-tabela">
-        <EmployeesTable
-          data={data}
-          canEdit={editable}
-          canViewSalary={showSalary}
-        />
+        <EmployeesTable data={data} canEdit={editable} />
       </div>
     </div>
   )

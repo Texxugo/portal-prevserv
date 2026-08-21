@@ -12,16 +12,6 @@ const optionalNullableText = z
   .nullish()
   .transform((v) => (v ? v : null))
 
-const optionalEmail = z
-  .string()
-  .trim()
-  .optional()
-  .transform((v) => (v ? v : null))
-  .refine(
-    (v) => v === null || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
-    "E-mail inválido"
-  )
-
 const optionalDate = z
   .string()
   .trim()
@@ -29,33 +19,41 @@ const optionalDate = z
   .transform((v) => (v ? new Date(v) : null))
   .refine((v) => v === null || !isNaN(v.getTime()), "Data inválida")
 
-// Aceita formato BR ("1.234,56") e JS ("1234.56")
-function parseDecimal(raw: string): number {
-  const s = raw.trim()
-  if (s.includes(",")) return Number(s.replace(/\./g, "").replace(",", "."))
-  return Number(s)
+// Endereço estruturado — os mesmos campos no posto e no colaborador, porque é
+// o que o painel operacional precisa para virar alfinete no mapa.
+const enderecoFields = {
+  cep: optionalText.refine(
+    (v) => v === null || /^\d{5}-?\d{3}$/.test(v),
+    "CEP inválido"
+  ),
+  logradouro: optionalText,
+  numero: optionalText,
+  complemento: optionalText,
+  bairro: optionalText,
+  cidade: optionalText,
+  uf: optionalText.refine(
+    (v) => v === null || /^[A-Za-z]{2}$/.test(v),
+    "UF inválida"
+  ),
 }
-
-const optionalNumber = z
-  .string()
-  .trim()
-  .optional()
-  .transform((v) => (v ? parseDecimal(v) : null))
-  .refine((v) => v === null || (!isNaN(v) && v >= 0), "Valor inválido")
 
 // ---------- RH ----------
 export const employeeSchema = z.object({
   name: z.string().trim().min(1, "Informe o nome"),
+  empresa: optionalText,
   matricula: optionalText,
   cpf: optionalText,
-  email: optionalEmail,
   phone: optionalText,
-  position: optionalText,
+  sexo: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? v.toUpperCase() : null))
+    .refine((v) => v === null || v === "M" || v === "F", "Sexo inválido"),
+  endereco: optionalText,
+  ...enderecoFields,
   departmentId: optionalText,
-  admissionDate: optionalDate,
-  salary: optionalNumber,
   status: z.enum(["ATIVO", "INATIVO", "AFASTADO"]),
-  workSchedule: optionalText,
   escalaId: optionalText,
   escalaInicio: optionalDate,
 })
@@ -63,6 +61,8 @@ export const employeeSchema = z.object({
 export const departmentSchema = z.object({
   name: z.string().trim().min(1, "Informe o nome do departamento"),
 })
+
+export const departmentEnderecoSchema = z.object(enderecoFields)
 
 // ---------- Usuários ----------
 export const userCreateSchema = z.object({
@@ -497,3 +497,37 @@ export const relatorioModeloSecaoSchema = z
         todos.findIndex((o) => o.toLowerCase() === label.toLowerCase()) === i
     ),
   }))
+
+// ---------- Painel operacional ----------
+export const COBERTURA_MOTIVOS = [
+  "FALTA",
+  "ATESTADO",
+  "FERIAS",
+  "AFASTAMENTO",
+  "EXTRA",
+  "OUTRO",
+] as const
+
+export type CoberturaMotivo = (typeof COBERTURA_MOTIVOS)[number]
+
+export const COBERTURA_MOTIVO_LABEL: Record<CoberturaMotivo, string> = {
+  FALTA: "Falta",
+  ATESTADO: "Atestado",
+  FERIAS: "Férias",
+  AFASTAMENTO: "Afastamento",
+  EXTRA: "Posto extra",
+  OUTRO: "Outro",
+}
+
+export const coberturaVagaSchema = z.object({
+  departmentId: z.string().trim().min(1, "Selecione o posto"),
+  date: requiredDate("Informe a data"),
+  periodo: z.enum(["DIURNO", "NOTURNO"]),
+  horario: optionalText,
+  motivo: z.enum(COBERTURA_MOTIVOS),
+  observacao: optionalText,
+  ausenteId: optionalText,
+  origemMovementId: optionalText,
+})
+
+export type CoberturaVagaInput = z.infer<typeof coberturaVagaSchema>

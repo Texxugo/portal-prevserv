@@ -1,19 +1,21 @@
 import * as XLSX from "xlsx"
 
-// Lê a primeira planilha de um arquivo .xlsx/.csv e retorna as linhas como objetos
-// (chaveados pelo cabeçalho da primeira linha).
-export async function parseSheet(
-  file: File
-): Promise<Record<string, unknown>[]> {
+// Lê a primeira planilha de um arquivo .xls/.xlsx/.csv como matriz de strings já
+// aparadas — sem assumir que a primeira linha é cabeçalho. O relatório de
+// empregados vem agrupado por empresa, então quem interpreta é o importador.
+export async function parseSheetRows(file: File): Promise<string[][]> {
   const buffer = await file.arrayBuffer()
   const workbook = XLSX.read(buffer, { type: "array", cellDates: true })
   const sheetName = workbook.SheetNames[0]
   if (!sheetName) return []
   const sheet = workbook.Sheets[sheetName]
-  return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
     defval: "",
     raw: true,
+    blankrows: true,
   })
+  return rows.map((row) => row.map(cellToString))
 }
 
 // Normaliza um cabeçalho: minúsculas, sem acentos, sem espaços nas pontas.
@@ -35,17 +37,4 @@ export function cellToString(value: unknown): string {
     return `${y}-${m}-${d}`
   }
   return String(value).trim()
-}
-
-// Mapeia uma linha bruta para campos canônicos usando um dicionário de cabeçalhos.
-export function mapRow(
-  raw: Record<string, unknown>,
-  headerMap: Record<string, string>
-): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(raw)) {
-    const canonical = headerMap[normalizeKey(key)]
-    if (canonical) out[canonical] = cellToString(value)
-  }
-  return out
 }

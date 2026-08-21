@@ -13,7 +13,7 @@ export default async function ImportarColaboradoresPage() {
     <div>
       <PageHeader
         title="Importar colaboradores"
-        description="Carregue uma planilha (.xlsx ou .csv) com os colaboradores."
+        description="Carregue o relatório de empregados da folha (Nome, Empresa, Matrícula e CPF)."
       >
         <ButtonLink variant="outline" href="/rh">
           <ArrowLeft className="size-4" />
@@ -25,40 +25,19 @@ export default async function ImportarColaboradoresPage() {
         action={importEmployees}
         columns={[
           { key: "name", label: "Nome" },
+          { key: "empresa", label: "Empresa" },
           { key: "matricula", label: "Matrícula" },
           { key: "cpf", label: "CPF" },
-          { key: "email", label: "E-mail" },
-          { key: "phone", label: "Telefone" },
-          { key: "position", label: "Cargo" },
-          { key: "department", label: "Departamento" },
-          { key: "admissionDate", label: "Admissão" },
-          { key: "salary", label: "Salário" },
-          { key: "status", label: "Situação" },
+          { key: "sexo", label: "Sexo" },
+          { key: "acao", label: "Ação" },
         ]}
+        hint="O arquivo vem em blocos: uma linha com a razão social, o cabeçalho Código / Nome / Nº do C.P.F. e as linhas do pessoal daquela empresa. Quem já está cadastrado é atualizado pelo CPF — os demais campos do cadastro não são tocados. A coluna Sexo é opcional: quando existe, alimenta o ícone do painel operacional; quando não vem, o cadastro atual é preservado."
         templateName="modelo-colaboradores.csv"
-        templateHeaders={[
-          "Nome",
-          "Matricula",
-          "CPF",
-          "Email",
-          "Telefone",
-          "Cargo",
-          "Departamento",
-          "Admissao",
-          "Salario",
-          "Situacao",
-        ]}
-        templateExample={[
-          "João Silva",
-          "1001",
-          "123.456.789-00",
-          "joao@empresa.com",
-          "1010",
-          "Analista",
-          "Tecnologia",
-          "2024-01-15",
-          "5000",
-          "ATIVO",
+        templateRows={[
+          ["PREVSERV PORTARIA E LIMPEZA LTDA"],
+          ["Codigo", "Nome", "Nº do C.P.F.", "Sexo"],
+          ["1001", "João Silva", "12345678900", "M"],
+          ["1002", "Maria Souza", "98765432100", "F"],
         ]}
         backHref="/rh"
         backLabel="Ver colaboradores"

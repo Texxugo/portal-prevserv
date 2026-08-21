@@ -1,13 +1,13 @@
 "use client"
 
-import { useActionState, useState } from "react"
+import { useActionState } from "react"
 import { useFormStatus } from "react-dom"
 import { Loader2 } from "lucide-react"
 
 import { createEmployee, updateEmployee } from "@/lib/actions/rh"
 import type { FormState } from "@/lib/form"
-import { ScheduleEditor } from "@/components/rh/schedule-editor"
 import { BackLink } from "@/components/back-link"
+import { EnderecoFields } from "@/components/geo/endereco-fields"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,22 +19,30 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
+// Base UI Select: `items` mapeia valor → rótulo exibido no gatilho.
+const SEXO_ITEMS = { "": "— Não informado —", M: "Masculino", F: "Feminino" }
+
 type Dept = { id: string; name: string }
 type Escala = { id: string; name: string }
 
 export type EmployeeValues = {
   id: string
   name: string
+  empresa: string | null
   matricula: string | null
   cpf: string | null
-  email: string | null
   phone: string | null
-  position: string | null
+  sexo: string | null
+  endereco: string | null
+  cep: string | null
+  logradouro: string | null
+  numero: string | null
+  complemento: string | null
+  bairro: string | null
+  cidade: string | null
+  uf: string | null
   departmentId: string | null
-  admissionDate: string | null
-  salary: number | null
   status: string
-  workSchedule: string | null
   escalaId: string | null
   escalaInicio: string | null
 }
@@ -58,12 +66,10 @@ export function EmployeeForm({
   departments,
   escalas,
   employee,
-  canViewSalary,
 }: {
   departments: Dept[]
   escalas: Escala[]
   employee?: EmployeeValues
-  canViewSalary: boolean
 }) {
   const action = employee
     ? updateEmployee.bind(null, employee.id)
@@ -73,9 +79,6 @@ export function EmployeeForm({
     undefined
   )
   const errors = state?.errors
-  const [tipoJornada, setTipoJornada] = useState(
-    employee?.escalaId ? "ESCALA" : "SEMANAL"
-  )
 
   return (
     <form
@@ -90,9 +93,44 @@ export function EmployeeForm({
         </div>
 
         <div className="space-y-2">
+          <Label htmlFor="empresa">Empresa</Label>
+          <Input id="empresa" name="empresa" defaultValue={employee?.empresa ?? ""} />
+          <FieldError messages={errors?.empresa} />
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="matricula">Matrícula</Label>
           <Input id="matricula" name="matricula" defaultValue={employee?.matricula ?? ""} />
           <FieldError messages={errors?.matricula} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="escalaId">Escala</Label>
+          <Select name="escalaId" defaultValue={employee?.escalaId ?? ""}>
+            <SelectTrigger id="escalaId" className="w-full">
+              <SelectValue placeholder="Selecione a escala" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">— Sem escala —</SelectItem>
+              {escalas.map((e) => (
+                <SelectItem key={e.id} value={e.id}>
+                  {e.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FieldError messages={errors?.escalaId} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="escalaInicio">Início do ciclo</Label>
+          <Input
+            id="escalaInicio"
+            name="escalaInicio"
+            type="date"
+            defaultValue={employee?.escalaInicio ?? ""}
+          />
+          <FieldError messages={errors?.escalaInicio} />
         </div>
 
         <div className="space-y-2">
@@ -105,18 +143,6 @@ export function EmployeeForm({
           <Label htmlFor="phone">Telefone / WhatsApp</Label>
           <Input id="phone" name="phone" defaultValue={employee?.phone ?? ""} placeholder="(00) 00000-0000" />
           <FieldError messages={errors?.phone} />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="email">E-mail</Label>
-          <Input id="email" name="email" type="email" defaultValue={employee?.email ?? ""} />
-          <FieldError messages={errors?.email} />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="position">Cargo</Label>
-          <Input id="position" name="position" defaultValue={employee?.position ?? ""} />
-          <FieldError messages={errors?.position} />
         </div>
 
         <div className="space-y-2">
@@ -153,86 +179,47 @@ export function EmployeeForm({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="admissionDate">Data de admissão</Label>
-          <Input
-            id="admissionDate"
-            name="admissionDate"
-            type="date"
-            defaultValue={employee?.admissionDate ?? ""}
-          />
-          <FieldError messages={errors?.admissionDate} />
+          <Label htmlFor="sexo">Sexo</Label>
+          <Select name="sexo" defaultValue={employee?.sexo ?? ""} items={SEXO_ITEMS}>
+            <SelectTrigger id="sexo" className="w-full">
+              <SelectValue placeholder="Não informado" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">— Não informado —</SelectItem>
+              <SelectItem value="M">Masculino</SelectItem>
+              <SelectItem value="F">Feminino</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Define a referência visual do ícone no painel operacional.
+          </p>
+          <FieldError messages={errors?.sexo} />
         </div>
-
-        {canViewSalary && (
-          <div className="space-y-2">
-            <Label htmlFor="salary">Salário (R$)</Label>
-            <Input
-              id="salary"
-              name="salary"
-              inputMode="decimal"
-              defaultValue={employee?.salary != null ? String(employee.salary) : ""}
-              placeholder="0,00"
-            />
-            <FieldError messages={errors?.salary} />
-          </div>
-        )}
       </div>
 
       <div className="space-y-4 border-t pt-5">
-        <div className="max-w-xs space-y-2">
-          <Label htmlFor="tipoJornada">Tipo de jornada</Label>
-          <Select
-            value={tipoJornada}
-            onValueChange={(v) => setTipoJornada(v ?? "SEMANAL")}
-            items={{ SEMANAL: "Semanal fixa", ESCALA: "Escala rotativa" }}
-          >
-            <SelectTrigger id="tipoJornada" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="SEMANAL">Semanal fixa</SelectItem>
-              <SelectItem value="ESCALA">Escala rotativa</SelectItem>
-            </SelectContent>
-          </Select>
+        <div>
+          <h3 className="text-sm font-medium">Endereço</h3>
+          <p className="text-xs text-muted-foreground">
+            Vira o alfinete do colaborador no painel operacional e a base do
+            cálculo de distância até os postos. Informe o CEP e o número.
+          </p>
         </div>
 
-        {tipoJornada === "SEMANAL" ? (
-          <ScheduleEditor defaultValue={employee?.workSchedule} />
-        ) : (
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="escalaId">Escala</Label>
-              <Select name="escalaId" defaultValue={employee?.escalaId ?? ""}>
-                <SelectTrigger id="escalaId" className="w-full">
-                  <SelectValue placeholder="Selecione a escala" />
-                </SelectTrigger>
-                <SelectContent>
-                  {escalas.length === 0 && (
-                    <SelectItem value="" disabled>
-                      Nenhuma escala cadastrada
-                    </SelectItem>
-                  )}
-                  {escalas.map((e) => (
-                    <SelectItem key={e.id} value={e.id}>
-                      {e.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldError messages={errors?.escalaId} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="escalaInicio">Início do ciclo</Label>
-              <Input
-                id="escalaInicio"
-                name="escalaInicio"
-                type="date"
-                defaultValue={employee?.escalaInicio ?? ""}
-              />
-              <FieldError messages={errors?.escalaInicio} />
-            </div>
-          </div>
-        )}
+        <EnderecoFields defaults={employee} errors={errors} />
+
+        {/* Cadastro antigo: continua editável porque é o que ainda alimenta a
+            geocodificação de quem nunca teve o endereço destrinchado. */}
+        <div className="space-y-2">
+          <Label htmlFor="endereco">Endereço em texto livre (legado)</Label>
+          <Input
+            id="endereco"
+            name="endereco"
+            defaultValue={employee?.endereco ?? ""}
+            placeholder="Rua, número, bairro, cidade"
+          />
+          <FieldError messages={errors?.endereco} />
+        </div>
       </div>
 
       <div className="flex items-center gap-3">

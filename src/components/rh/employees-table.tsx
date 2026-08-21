@@ -1,10 +1,9 @@
 "use client"
 
-import { Pencil } from "lucide-react"
+import { BellOff, MapPinOff, Pencil } from "lucide-react"
 import type { ColumnDef } from "@tanstack/react-table"
 
 import { deleteEmployee } from "@/lib/actions/rh"
-import { formatCurrency } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { ButtonLink } from "@/components/button-link"
 import { ConfirmDelete } from "@/components/confirm-delete"
@@ -14,14 +13,15 @@ import { OnDutyBadge } from "@/components/rh/on-duty-badge"
 export type EmployeeRow = {
   id: string
   name: string
+  empresa: string | null
+  matricula: string | null
   cpf: string | null
-  email: string | null
   phone: string | null
-  position: string | null
   department: string | null
   status: string
-  salary: number | null
   onDutyToday: boolean | null
+  semLocalizacao: boolean
+  optOut: boolean
 }
 
 const STATUS: Record<string, { label: string; className: string }> = {
@@ -42,27 +42,51 @@ const STATUS: Record<string, { label: string; className: string }> = {
 export function EmployeesTable({
   data,
   canEdit,
-  canViewSalary,
 }: {
   data: EmployeeRow[]
   canEdit: boolean
-  canViewSalary: boolean
 }) {
   const columns: ColumnDef<EmployeeRow>[] = [
     {
       accessorKey: "name",
       header: "Nome",
       cell: ({ row }) => (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-medium">{row.original.name}</span>
           <OnDutyBadge onDuty={row.original.onDutyToday} />
+          {row.original.optOut && (
+            <Badge
+              variant="secondary"
+              title="Pediu para não receber convites de extra por WhatsApp"
+            >
+              <BellOff /> Não perturbar
+            </Badge>
+          )}
+          {row.original.semLocalizacao && (
+            <Badge
+              variant="outline"
+              title="Sem endereço geolocalizado — não aparece no painel operacional"
+            >
+              <MapPinOff /> Fora do mapa
+            </Badge>
+          )}
         </div>
       ),
     },
     {
-      accessorKey: "position",
-      header: "Cargo",
-      cell: ({ row }) => row.original.position ?? "—",
+      accessorKey: "empresa",
+      header: "Empresa",
+      cell: ({ row }) => row.original.empresa ?? "—",
+    },
+    {
+      accessorKey: "matricula",
+      header: "Matrícula",
+      cell: ({ row }) => row.original.matricula ?? "—",
+    },
+    {
+      accessorKey: "cpf",
+      header: "CPF",
+      cell: ({ row }) => row.original.cpf ?? "—",
     },
     {
       accessorKey: "department",
@@ -71,7 +95,7 @@ export function EmployeesTable({
     },
     {
       accessorKey: "phone",
-      header: "Ramal",
+      header: "Telefone",
       cell: ({ row }) => row.original.phone ?? "—",
     },
     {
@@ -90,15 +114,6 @@ export function EmployeesTable({
       },
     },
   ]
-
-  if (canViewSalary) {
-    columns.push({
-      accessorKey: "salary",
-      header: "Salário",
-      cell: ({ row }) =>
-        row.original.salary != null ? formatCurrency(row.original.salary) : "—",
-    })
-  }
 
   if (canEdit) {
     columns.push({
