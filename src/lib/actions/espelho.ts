@@ -1,6 +1,6 @@
 "use server"
 
-import { requireSector, requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModulo, requireModuloEdit } from "@/lib/auth-helpers"
 import { competenciaRange } from "@/lib/competencia"
 import { prisma } from "@/lib/db"
 import { buildEmployeeIndex } from "@/lib/employee-match"
@@ -52,7 +52,7 @@ export async function previewEspelho(
   _prev: EspelhoState,
   formData: FormData
 ): Promise<EspelhoState> {
-  await requireSector("rh")
+  await requireModulo("ESPELHOS")
 
   const file = formData.get("file")
   const competencia = String(formData.get("competencia") || "")
@@ -152,7 +152,7 @@ export async function enviarWhatsapp(input: {
   competencia: string
   message: string
 }): Promise<{ ok: boolean; error?: string }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("ESPELHOS")
 
   const result = await sendAndLogWhatsapp(
     {

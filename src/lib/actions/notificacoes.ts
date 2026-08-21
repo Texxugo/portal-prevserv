@@ -2,10 +2,9 @@
 
 import { revalidatePath } from "next/cache"
 
-import { auth } from "@/auth"
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { getAccess, requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
-import { canEdit } from "@/lib/permissions"
+import { podeEditar } from "@/lib/permissions"
 import { setSetting } from "@/lib/settings"
 import { normalizePhone } from "@/lib/zapi"
 import { COBRANCA_PHONE_KEY } from "@/lib/notificacoes/config"
@@ -21,9 +20,7 @@ export type NotificacaoItem = {
 
 // Guard suave: usado em polling do sino — sessão expirada não pode redirecionar.
 async function canReadNotificacoes(): Promise<boolean> {
-  const session = await auth()
-  const role = session?.user?.role
-  return !!role && canEdit(role, "rh")
+  return podeEditar(await getAccess(), "PENDENCIAS")
 }
 
 export async function getNotificacoes(): Promise<{
@@ -78,7 +75,7 @@ export async function limparNotificacoes(): Promise<{ ok: boolean }> {
 export async function setCobrancaPhone(
   phone: string
 ): Promise<{ ok: boolean; error?: string }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("PENDENCIAS")
   const trimmed = phone.trim()
   if (trimmed) {
     const normalized = normalizePhone(trimmed)

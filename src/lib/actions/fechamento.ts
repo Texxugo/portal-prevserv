@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
-import { actorName, requireSectorEdit } from "@/lib/auth-helpers"
+import { actorName, requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { buildEmployeeIndex } from "@/lib/employee-match"
 import { formatDate } from "@/lib/format"
@@ -40,7 +40,7 @@ function tipoLabel(tipo: string): string {
 }
 
 export async function setTolerancia(min: number): Promise<{ ok: boolean }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("FECHAMENTO")
   const v = String(Math.max(0, Math.floor(min || 0)))
   await setSetting(TOLERANCIA_KEY, v)
   revalidatePath("/rh/fechamento")
@@ -48,7 +48,7 @@ export async function setTolerancia(min: number): Promise<{ ok: boolean }> {
 }
 
 export async function setTiposAtivos(list: string[]): Promise<{ ok: boolean }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("FECHAMENTO")
   const valid = list.filter((t) => TODOS_TIPOS.includes(t))
   await setSetting(TIPOS_ATIVOS_KEY, valid.join(","))
   revalidatePath("/rh/fechamento")
@@ -112,7 +112,7 @@ export async function importarEspelhoFechamento(
   _prev: FechamentoImportState,
   formData: FormData
 ): Promise<FechamentoImportState> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("FECHAMENTO")
 
   const file = formData.get("file")
   const competencia = String(formData.get("competencia") || "")
@@ -453,7 +453,7 @@ export async function reprocessarCompetencia(competencia: string): Promise<{
   error?: string
   resumo?: { processados: number; ocorrencias: number; semDados: number }
 }> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("FECHAMENTO")
   if (await isCompetenciaFechada(competencia)) {
     return { ok: false, error: COMPETENCIA_FECHADA_MSG }
   }
@@ -571,7 +571,7 @@ export async function salvarJustificativa(
   categoria: string | null,
   obs: string | null
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("FECHAMENTO")
   const oc = await prisma.espelhoOcorrencia.findUnique({
     where: { id: ocorrenciaId },
     include: {
@@ -620,7 +620,7 @@ export async function salvarJustificativaLote(
   categoria: string | null,
   obs: string | null
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("FECHAMENTO")
   if (ids.length === 0) return { ok: true }
   const first = await prisma.espelhoOcorrencia.findFirst({
     where: { id: { in: ids } },
@@ -669,7 +669,7 @@ export async function encerrarFechamento(
   id: string,
   force = false
 ): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean }> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("FECHAMENTO")
   const f = await prisma.espelhoFechamento.findUnique({
     where: { id },
     include: { ocorrencias: { select: { resolvido: true } } },
@@ -711,7 +711,7 @@ export async function encerrarFechamento(
 export async function encerrarProntos(
   competencia: string
 ): Promise<{ ok: boolean; error?: string; count?: number }> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("FECHAMENTO")
   if (await isCompetenciaFechada(competencia)) {
     return { ok: false, error: COMPETENCIA_FECHADA_MSG }
   }
@@ -745,7 +745,7 @@ export async function encerrarProntos(
 export async function reabrirFechamento(
   id: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("FECHAMENTO")
   const f = await prisma.espelhoFechamento.findUnique({
     where: { id },
     select: { competencia: true },
@@ -776,7 +776,7 @@ export async function reabrirFechamento(
 export async function excluirFechamento(
   id: string
 ): Promise<{ ok: boolean; error?: string }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("FECHAMENTO")
   const f = await prisma.espelhoFechamento.findUnique({
     where: { id },
     select: { competencia: true },
@@ -793,7 +793,7 @@ export async function excluirFechamento(
 export async function limparCompetencia(
   competencia: string
 ): Promise<{ ok: boolean; error?: string; count?: number }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("FECHAMENTO")
   if (await isCompetenciaFechada(competencia)) {
     return { ok: false, error: COMPETENCIA_FECHADA_MSG }
   }
@@ -807,7 +807,7 @@ export async function fecharCompetencia(
   competencia: string,
   force = false
 ): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean }> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("FECHAMENTO")
   const abertos = await prisma.espelhoFechamento.count({
     where: { competencia, status: { not: "ENCERRADO" } },
   })
@@ -841,7 +841,7 @@ export async function fecharCompetencia(
 export async function reabrirCompetencia(
   competencia: string
 ): Promise<{ ok: boolean }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("FECHAMENTO")
   await prisma.espelhoCompetencia.upsert({
     where: { competencia },
     update: { status: "ABERTA", closedAt: null, closedById: null, closedByName: null },

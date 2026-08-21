@@ -18,14 +18,64 @@ enum Role {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(VIEWER)
-  active    Boolean  @default(true)
+  id       String  @id @default(cuid())
+  name     String
+  email    String  @unique
+  password String
+  role     Role    @default(VIEWER)
+  active   Boolean @default(true)
+  // true = enxerga todos os postos; false = só os postos ligados em departments.
+  // ADMIN ignora este campo (vê tudo por definição do perfil).
+  todosPostos Boolean @default(false)
+
+  modulos     UserModulo[]
+  departments UserDepartment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Módulo liberado para o usuário. A ausência da linha é a negação: quem não tem
+// a linha não vê o módulo. `editar` separa consulta de cadastro dentro do mesmo
+// módulo (o posto lança efetivo; o supervisor só acompanha).
+model UserModulo {
+  id     String  @id @default(cuid())
+  userId String
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  modulo String
+  editar Boolean @default(false)
+
+  @@unique([userId, modulo])
+  @@index([userId])
+}
+
+// Posto que o usuário enxerga. Só vale quando todosPostos = false.
+model UserDepartment {
+  id           String     @id @default(cuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, departmentId])
+  @@index([userId])
+  @@index([departmentId])
+}
+
+// Rastro de quem mexeu no acesso de quem. Guarda o texto do antes/depois já
+// pronto para leitura: o histórico precisa continuar legível mesmo que um
+// módulo ou posto deixe de existir depois.
+model PermissaoAuditoria {
+  id             String   @id @default(cuid())
+  targetUserId   String
+  targetUserName String
+  actorUserId    String
+  actorName      String
+  acao           String // CRIACAO | ALTERACAO | EXCLUSAO
+  detalhes       String
+  createdAt      DateTime @default(now())
+
+  @@index([targetUserId, createdAt])
 }
 
 model Department {
@@ -36,8 +86,10 @@ model Department {
   whatsappGrupoId String?
   employees       Employee[]
   efetivos        Efetivo[]
+  conferencias    EfetivoConferencia[]
   relatorios      RelatorioDiario[]
   relatorioItens  RelatorioModeloItem[]
+  usuarios        UserDepartment[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 }
@@ -122,6 +174,25 @@ model Efetivo {
 
   @@index([employeeId])
   @@index([departmentId])
+  @@index([date])
+  // histórico do posto e alerta de ausência filtram posto + faixa de datas
+  @@index([departmentId, date])
+}
+
+// Confirmação de que o efetivo do turno foi conferido e continua sem novidades.
+// O lembrete das 07h/17h só se cala com uma das duas coisas: um cadastro alterado
+// depois do horário OU esta confirmação explícita. Sem ela não há como separar
+// "o posto olhou e nada mudou" de "ninguém olhou".
+model EfetivoConferencia {
+  id           String     @id @default(cuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  date         DateTime
+  periodo      String // DIURNO | NOTURNO
+  confirmadoAt DateTime   @default(now())
+  actorName    String
+
+  @@unique([departmentId, date, periodo])
   @@index([date])
 }
 

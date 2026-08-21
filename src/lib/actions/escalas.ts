@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { Prisma } from "@prisma/client"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { escalaSchema } from "@/lib/schemas"
 
@@ -19,7 +19,7 @@ export async function createEscala(
   name: string,
   cycleDays: string
 ): Promise<Result> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("ESCALAS")
   const parsed = escalaSchema.safeParse({ name, cycleDays })
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dados inválidos" }
@@ -39,7 +39,7 @@ export async function updateEscala(
   name: string,
   cycleDays: string
 ): Promise<Result> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("ESCALAS")
   const parsed = escalaSchema.safeParse({ name, cycleDays })
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dados inválidos" }
@@ -55,7 +55,7 @@ export async function updateEscala(
 }
 
 export async function deleteEscala(id: string): Promise<Result> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("ESCALAS")
   await prisma.escala.delete({ where: { id } })
   revalidatePath("/rh/escalas")
   return { ok: true }

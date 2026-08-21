@@ -1,19 +1,20 @@
 import { Building, Plus, Upload } from "lucide-react"
 
-import { requireSector } from "@/lib/auth-helpers"
+import { requireModulo } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
-import { canEdit, canViewSalary } from "@/lib/permissions"
+import { filtroDepartmentId, podeEditar, podeVerSalario } from "@/lib/permissions"
 import { buildDayResolver, hasResolverSchedule } from "@/lib/jornada"
 import { PageHeader } from "@/components/layout/page-header"
 import { ButtonLink } from "@/components/button-link"
 import { EmployeesTable, type EmployeeRow } from "@/components/rh/employees-table"
 
 export default async function RhPage() {
-  const user = await requireSector("rh")
-  const editable = canEdit(user.role, "rh")
-  const showSalary = canViewSalary(user.role)
+  const user = await requireModulo("COLABORADORES")
+  const editable = podeEditar(user, "COLABORADORES")
+  const showSalary = podeVerSalario(user)
 
   const employees = await prisma.employee.findMany({
+    where: filtroDepartmentId(user),
     orderBy: { name: "asc" },
     include: { department: true, escala: { select: { cycleDays: true } } },
   })

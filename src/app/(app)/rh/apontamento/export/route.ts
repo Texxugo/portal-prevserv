@@ -1,8 +1,8 @@
 import { Document, Packer, Paragraph, TextRun } from "docx"
 
-import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
-import { canView } from "@/lib/permissions"
+import { getAccess } from "@/lib/auth-helpers"
+import { podeVer } from "@/lib/permissions"
 
 // "YYYY-MM" → "MM/AAAA" (formato do cabeçalho do relatório).
 function compHeader(comp: string): string {
@@ -11,8 +11,8 @@ function compHeader(comp: string): string {
 }
 
 export async function GET(req: Request) {
-  const session = await auth()
-  if (!session?.user || !canView(session.user.role, "rh")) {
+  const access = await getAccess()
+  if (!podeVer(access, "APONTAMENTO")) {
     return new Response("Não autorizado", { status: 403 })
   }
 

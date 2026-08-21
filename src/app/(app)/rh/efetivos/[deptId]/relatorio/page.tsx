@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation"
 
-import { requireSector } from "@/lib/auth-helpers"
+import { requirePosto } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { formatDate, formatDateInput } from "@/lib/format"
-import { canEdit } from "@/lib/permissions"
+import { podeEditar } from "@/lib/permissions"
 import {
   buildRelatorioDiarioMessage,
   comRodapeAutenticidade,
@@ -28,10 +28,10 @@ export default async function RelatorioDiarioPage({
   params: Promise<{ deptId: string }>
   searchParams: Promise<{ date?: string; periodo?: string }>
 }) {
-  const user = await requireSector("rh")
-  const editable = canEdit(user.role, "rh")
-
   const { deptId } = await params
+  const user = await requirePosto("RELATORIOS", deptId)
+  const editable = podeEditar(user, "RELATORIOS")
+
   const { date, periodo } = await searchParams
   const dateStr = date || formatDateInput(new Date())
   const periodoStr = periodo === "NOTURNO" ? "NOTURNO" : "DIURNO"

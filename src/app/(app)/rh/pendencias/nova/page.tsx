@@ -1,6 +1,6 @@
 import { ArrowLeft } from "lucide-react"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { currentCompetencia } from "@/lib/competencia"
 import { prisma } from "@/lib/db"
 import { formatDate } from "@/lib/format"
@@ -14,7 +14,7 @@ export default async function NovaPendenciaPage({
 }: {
   searchParams: Promise<{ comp?: string; occurrenceId?: string }>
 }) {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("PENDENCIAS")
   const { comp, occurrenceId } = await searchParams
 
   const [employees, documentTypes, occurrence] = await Promise.all([

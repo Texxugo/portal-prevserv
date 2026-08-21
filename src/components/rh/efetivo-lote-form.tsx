@@ -197,11 +197,17 @@ export function EfetivoLoteForm({
   baseEmployees,
   departmentId,
   departmentName,
+  // vêm da URL quando o cadastro é aberto pelo lembrete de conferência, que já
+  // sabe qual dia e qual turno estão pendentes
+  defaultDate,
+  defaultPeriodo,
 }: {
   employees: EmployeeOption[]
   baseEmployees: EmployeeOption[]
   departmentId: string
   departmentName: string
+  defaultDate?: string
+  defaultPeriodo?: string
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(
     createEfetivo,
@@ -268,13 +274,23 @@ export function EfetivoLoteForm({
 
         <div className="space-y-2">
           <Label htmlFor="date">Data *</Label>
-          <Input id="date" name="date" type="date" required />
+          <Input
+            id="date"
+            name="date"
+            type="date"
+            required
+            defaultValue={defaultDate}
+          />
           <FieldError messages={errors?.date} />
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="periodo">Período *</Label>
-          <Select name="periodo" defaultValue="DIURNO" items={periodoItems}>
+          <Select
+            name="periodo"
+            defaultValue={defaultPeriodo ?? "DIURNO"}
+            items={periodoItems}
+          >
             <SelectTrigger id="periodo" className="w-full">
               <SelectValue />
             </SelectTrigger>

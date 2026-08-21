@@ -1,10 +1,10 @@
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { PageHeader } from "@/components/layout/page-header"
 import { MovementForm } from "@/components/rh/movement-form"
 
 export default async function NovaMovimentacaoPage() {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("MOVIMENTOS")
   const employees = await prisma.employee.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },

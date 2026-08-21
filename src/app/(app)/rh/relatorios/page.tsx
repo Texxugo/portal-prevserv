@@ -1,8 +1,13 @@
 import Link from "next/link"
 
-import { requireSector } from "@/lib/auth-helpers"
+import { requireModulo } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { formatDate, formatDateInput, formatDateTime } from "@/lib/format"
+import {
+  filtroDepartmentId,
+  filtroPostoId,
+  verTodosPostos,
+} from "@/lib/permissions"
 import { PageHeader } from "@/components/layout/page-header"
 import { ButtonLink } from "@/components/button-link"
 import { DateFilter } from "@/components/date-filter"
@@ -15,6 +20,7 @@ const RESULTADO_LABEL: Record<string, string> = {
   ALTERADO: "Texto alterado",
   CODIGO_APENAS: "Só o código",
   NAO_ENCONTRADO: "Não encontrado",
+  FORA_DO_ACESSO: "Posto fora do acesso",
 }
 
 // Painel de controle do dia: quais postos fecharam relatório em cada turno e
@@ -25,7 +31,7 @@ export default async function RelatoriosPainelPage({
 }: {
   searchParams: Promise<{ date?: string }>
 }) {
-  await requireSector("rh")
+  const access = await requireModulo("RELATORIOS")
 
   const { date } = await searchParams
   const dateStr = date || formatDateInput(new Date())
@@ -33,11 +39,12 @@ export default async function RelatoriosPainelPage({
 
   const [departments, relatorios, verificacoes] = await Promise.all([
     prisma.department.findMany({
+      where: filtroPostoId(access),
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     prisma.relatorioDiario.findMany({
-      where: { date: dia },
+      where: { date: dia, ...filtroDepartmentId(access) },
       select: {
         departmentId: true,
         periodo: true,
@@ -48,6 +55,10 @@ export default async function RelatoriosPainelPage({
       },
     }),
     prisma.relatorioVerificacao.findMany({
+      // quem só enxerga alguns postos não vê o rastro de conferência dos outros
+      where: verTodosPostos(access)
+        ? {}
+        : { relatorio: { is: filtroDepartmentId(access) } },
       orderBy: { createdAt: "desc" },
       take: 15,
       select: {
@@ -63,7 +74,7 @@ export default async function RelatoriosPainelPage({
   // Só interessam os postos com movimento no dia: listar os 34 postos sempre
   // afogaria o painel em linhas vazias de posto que não opera todo dia.
   const efetivos = await prisma.efetivo.findMany({
-    where: { date: dia },
+    where: { date: dia, ...filtroDepartmentId(access) },
     select: { departmentId: true, periodo: true },
   })
 

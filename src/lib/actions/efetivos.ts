@@ -3,10 +3,20 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 
-import { actorName, requireSectorEdit } from "@/lib/auth-helpers"
+import {
+  actorName,
+  checkPostoEdit,
+  requireModuloEdit,
+  requirePostoEdit,
+} from "@/lib/auth-helpers"
 import { competenciaFromDate } from "@/lib/competencia"
 import { prisma } from "@/lib/db"
+import {
+  EFETIVO_PERIODOS,
+  type EfetivoPeriodo,
+} from "@/lib/efetivo-cobertura"
 import { toFieldErrors, type FormState } from "@/lib/form"
+import { podeVerPosto } from "@/lib/permissions"
 import { formatDate, formatDateInput } from "@/lib/format"
 import {
   EFETIVO_EVENTO_SEM_ALTERACAO,
@@ -16,6 +26,8 @@ import {
 import { sendGroupText } from "@/lib/zapi"
 
 const DOCUMENTO_TIPO_EFETIVO = "Documento de efetivo"
+
+const POSTO_FORA_DO_ACESSO = "Este posto não está no seu acesso."
 
 type CamposComuns = {
   departmentId: string
@@ -57,18 +69,55 @@ function buildData(comuns: CamposComuns, p: Pessoa) {
 function refresh(departmentId: string) {
   revalidatePath("/rh/efetivos")
   revalidatePath(`/rh/efetivos/${departmentId}`)
+  revalidatePath("/rh/efetivos/ausencias")
   revalidatePath("/rh/pendencias")
   revalidatePath("/")
+}
+
+// "Sem novidades": o posto conferiu o turno e nada mudou. É o que cala o
+// lembrete das 07h/17h quando não houve alteração para lançar — e, num turno
+// sem ninguém, é a confirmação de que a ausência é real, não esquecimento.
+export async function confirmarEfetivoConferido(
+  departmentId: string,
+  dateStr: string,
+  periodo: string
+): Promise<{ ok: boolean; error?: string }> {
+  const permitido = await checkPostoEdit("EFETIVOS", departmentId)
+  if ("erro" in permitido) return { ok: false, error: permitido.erro }
+  const user = permitido.access
+
+  if (!EFETIVO_PERIODOS.includes(periodo as EfetivoPeriodo)) {
+    return { ok: false, error: "Turno inválido." }
+  }
+  const date = new Date(dateStr)
+  if (Number.isNaN(date.getTime())) {
+    return { ok: false, error: "Data inválida." }
+  }
+
+  await prisma.efetivoConferencia.upsert({
+    where: { departmentId_date_periodo: { departmentId, date, periodo } },
+    create: { departmentId, date, periodo, actorName: actorName(user) },
+    update: { confirmadoAt: new Date(), actorName: actorName(user) },
+  })
+
+  refresh(departmentId)
+  return { ok: true }
 }
 
 export async function createEfetivo(
   _prev: FormState,
   formData: FormData
 ): Promise<FormState> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("EFETIVOS")
   const parsed = efetivoCreateSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { errors: toFieldErrors(parsed.error) }
   const data = parsed.data
+
+  // O posto vem do formulário: sem esta checagem, trocar o campo no navegador
+  // lançaria efetivo em posto que o usuário não opera.
+  if (!podeVerPosto(user, data.departmentId)) {
+    return { errors: { departmentId: [POSTO_FORA_DO_ACESSO] } }
+  }
 
   // Base operacional (se informada) entra como mais um registro do dia. É só
   // presença: sem evento próprio, não gera pendência de documento.
@@ -182,9 +231,13 @@ export async function updateEfetivo(
   _prev: FormState,
   formData: FormData
 ): Promise<FormState> {
-  await requireSectorEdit("rh")
+  const user = await requireModuloEdit("EFETIVOS")
   const parsed = efetivoSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { errors: toFieldErrors(parsed.error) }
+
+  if (!podeVerPosto(user, parsed.data.departmentId)) {
+    return { errors: { departmentId: [POSTO_FORA_DO_ACESSO] } }
+  }
 
   await prisma.efetivo.update({
     where: { id },
@@ -203,7 +256,8 @@ export async function enviarEfetivoAoGrupo(
   departmentId: string,
   message: string
 ): Promise<{ ok: boolean; error?: string }> {
-  await requireSectorEdit("rh")
+  const permitido = await checkPostoEdit("EFETIVOS", departmentId)
+  if ("erro" in permitido) return { ok: false, error: permitido.erro }
 
   if (message.trim().length < 10) {
     return { ok: false, error: "Mensagem vazia." }
@@ -228,7 +282,13 @@ export async function enviarEfetivoAoGrupo(
 }
 
 export async function deleteEfetivo(id: string): Promise<void> {
-  await requireSectorEdit("rh")
-  const efetivo = await prisma.efetivo.delete({ where: { id } })
-  refresh(efetivo.departmentId)
+  // o posto sai do registro, não da chamada: quem apaga só informa o id
+  const alvo = await prisma.efetivo.findUnique({
+    where: { id },
+    select: { departmentId: true },
+  })
+  if (!alvo) return
+  await requirePostoEdit("EFETIVOS", alvo.departmentId)
+  await prisma.efetivo.delete({ where: { id } })
+  refresh(alvo.departmentId)
 }

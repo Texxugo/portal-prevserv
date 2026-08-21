@@ -1,6 +1,6 @@
 import { ArrowLeft } from "lucide-react"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { parseCycle } from "@/lib/jornada"
 import { PageHeader } from "@/components/layout/page-header"
@@ -8,7 +8,7 @@ import { ButtonLink } from "@/components/button-link"
 import { EscalasManager } from "@/components/rh/escalas-manager"
 
 export default async function EscalasPage() {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("ESCALAS")
   const escalas = await prisma.escala.findMany({ orderBy: { name: "asc" } })
 
   return (

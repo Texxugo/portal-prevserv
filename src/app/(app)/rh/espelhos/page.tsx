@@ -1,6 +1,6 @@
 import { ArrowLeft } from "lucide-react"
 
-import { requireSector } from "@/lib/auth-helpers"
+import { requireModulo } from "@/lib/auth-helpers"
 import { competenciaLabel, currentCompetencia, lastCompetencias } from "@/lib/competencia"
 import { prisma } from "@/lib/db"
 import { PageHeader } from "@/components/layout/page-header"
@@ -8,7 +8,7 @@ import { ButtonLink } from "@/components/button-link"
 import { EspelhoPanel } from "@/components/rh/espelho-panel"
 
 export default async function EspelhosPage() {
-  await requireSector("rh")
+  await requireModulo("ESPELHOS")
   const options = lastCompetencias(12).map((v) => ({
     value: v,
     label: competenciaLabel(v),

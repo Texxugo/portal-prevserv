@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requirePostoEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { baseDepartmentIds, employeeOptions } from "@/lib/efetivo-options"
 import { formatDateInput } from "@/lib/format"
@@ -16,7 +16,7 @@ export default async function EditarEfetivoPage({
   params: Promise<{ deptId: string; id: string }>
 }) {
   const { deptId, id } = await params
-  await requireSectorEdit("rh")
+  await requirePostoEdit("EFETIVOS", deptId)
 
   const [efetivo, baseIds] = await Promise.all([
     prisma.efetivo.findUnique({

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import type { z } from "zod"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { employeeSchema } from "@/lib/schemas"
 import { mapRow, normalizeKey, parseSheet } from "@/lib/import/parse-sheet"
@@ -63,7 +63,7 @@ export async function importEmployees(
   _prev: ImportState,
   formData: FormData
 ): Promise<ImportState> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("COLABORADORES")
   const file = readFile(formData)
   if (!file) return { status: "error", message: "Selecione um arquivo .xlsx ou .csv." }
   const confirm = formData.get("confirm") === "1"

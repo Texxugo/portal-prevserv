@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { Prisma } from "@prisma/client"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { toFieldErrors, type FormState } from "@/lib/form"
+import { podeVerPosto } from "@/lib/permissions"
 import { departmentSchema, employeeSchema } from "@/lib/schemas"
 import {
   isGrupoIdValido,
@@ -15,14 +16,20 @@ import {
   type GrupoWhatsapp,
 } from "@/lib/zapi"
 
+const POSTO_FORA_DO_ACESSO = "Este posto não está no seu acesso."
+
 // ---------- Colaboradores ----------
 export async function createEmployee(
   _prev: FormState,
   formData: FormData
 ): Promise<FormState> {
-  await requireSectorEdit("rh")
+  const user = await requireModuloEdit("COLABORADORES")
   const parsed = employeeSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { errors: toFieldErrors(parsed.error) }
+
+  if (!podeVerPosto(user, parsed.data.departmentId)) {
+    return { errors: { departmentId: [POSTO_FORA_DO_ACESSO] } }
+  }
 
   try {
     await prisma.employee.create({ data: parsed.data })
@@ -46,9 +53,23 @@ export async function updateEmployee(
   _prev: FormState,
   formData: FormData
 ): Promise<FormState> {
-  await requireSectorEdit("rh")
+  const user = await requireModuloEdit("COLABORADORES")
   const parsed = employeeSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { errors: toFieldErrors(parsed.error) }
+
+  const atual = await prisma.employee.findUnique({
+    where: { id },
+    select: { departmentId: true },
+  })
+  // Vale para a origem e para o destino: tirar alguém de um posto fora do
+  // escopo é tão indevido quanto trazê-lo para dentro dele.
+  if (
+    !atual ||
+    !podeVerPosto(user, atual.departmentId) ||
+    !podeVerPosto(user, parsed.data.departmentId)
+  ) {
+    return { errors: { departmentId: [POSTO_FORA_DO_ACESSO] } }
+  }
 
   try {
     await prisma.employee.update({ where: { id }, data: parsed.data })
@@ -68,7 +89,12 @@ export async function updateEmployee(
 }
 
 export async function deleteEmployee(id: string): Promise<void> {
-  await requireSectorEdit("rh")
+  const user = await requireModuloEdit("COLABORADORES")
+  const alvo = await prisma.employee.findUnique({
+    where: { id },
+    select: { departmentId: true },
+  })
+  if (!alvo || !podeVerPosto(user, alvo.departmentId)) return
   await prisma.employee.delete({ where: { id } })
   revalidatePath("/rh")
 }
@@ -78,7 +104,7 @@ export async function createDepartment(
   _prev: FormState,
   formData: FormData
 ): Promise<FormState> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("DEPARTAMENTOS")
   const parsed = departmentSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { errors: toFieldErrors(parsed.error) }
 
@@ -102,7 +128,7 @@ export async function listarGruposWhatsapp(): Promise<{
   grupos?: GrupoWhatsapp[]
   error?: string
 }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("DEPARTAMENTOS")
   return listGroups()
 }
 
@@ -112,7 +138,7 @@ export async function setDepartmentGrupo(
   id: string,
   grupoId: string
 ): Promise<{ ok: boolean; error?: string }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("DEPARTAMENTOS")
   const valor = grupoId.trim()
 
   if (valor && !isGrupoIdValido(valor)) {
@@ -132,7 +158,7 @@ export async function setDepartmentGrupo(
 }
 
 export async function deleteDepartment(id: string): Promise<void> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("DEPARTAMENTOS")
   await prisma.department.delete({ where: { id } })
   revalidatePath("/rh/departamentos")
 }

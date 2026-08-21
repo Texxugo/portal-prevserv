@@ -2,7 +2,7 @@ import Link from "next/link"
 import { AlertTriangle, ListFilter, Settings, type LucideIcon } from "lucide-react"
 import { notFound } from "next/navigation"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import {
   competenciaLabel,
   competenciaSelectOptions,
@@ -34,7 +34,7 @@ export default async function PendenciasPage({
     manage?: string
   }>
 }) {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("PENDENCIAS")
   const params = await searchParams
   const competencia = params.comp || currentCompetencia()
 

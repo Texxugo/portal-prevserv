@@ -1,8 +1,8 @@
 import * as XLSX from "xlsx"
 
-import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
-import { canView } from "@/lib/permissions"
+import { getAccess } from "@/lib/auth-helpers"
+import { podeVer } from "@/lib/permissions"
 import { competenciaLabel } from "@/lib/competencia"
 import { formatDate } from "@/lib/format"
 import {
@@ -11,8 +11,8 @@ import {
 } from "@/lib/espelho/detectar-fechamento"
 
 export async function GET(req: Request) {
-  const session = await auth()
-  if (!session?.user || !canView(session.user.role, "rh")) {
+  const access = await getAccess()
+  if (!podeVer(access, "FECHAMENTO")) {
     return new Response("Não autorizado", { status: 403 })
   }
 

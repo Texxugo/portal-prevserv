@@ -7,6 +7,8 @@ import { Collapsible } from "@base-ui/react/collapsible"
 import {
   CalendarClock,
   CalendarDays,
+  CalendarX2,
+  Building,
   ChevronDown,
   ClipboardCheck,
   ClipboardList,
@@ -20,15 +22,22 @@ import {
   UserCheck,
   Users,
 } from "lucide-react"
-import type { Role } from "@prisma/client"
-
-import { canEdit, canView, type Sector } from "@/lib/permissions"
+import {
+  podeEditar,
+  podeVer,
+  type Access,
+  type ModuloKey,
+} from "@/lib/permissions"
 import { cn } from "@/lib/utils"
 
+// `modulo: null` = sempre visível para quem está logado (só o Dashboard, que é
+// a tela de destino de quem não tem permissão para nada).
+// `editOnly` = o item só aparece para quem tem edição naquele módulo.
 type NavLeaf = {
   href: string
   label: string
   icon: typeof LayoutDashboard
+  modulo: ModuloKey
   editOnly?: boolean
 }
 
@@ -38,39 +47,75 @@ type NavEntry =
       href: string
       label: string
       icon: typeof LayoutDashboard
-      sector: Sector | null
+      modulo: ModuloKey | null
+      editOnly?: boolean
     }
   | {
       kind: "group"
       id: string
       label: string
       icon: typeof LayoutDashboard
-      sector: Sector
+      // o grupo aparece quando o usuário enxerga ao menos um filho
       href?: string
+      hrefModulo?: ModuloKey
       children: NavLeaf[]
     }
 
 const NAV: NavEntry[] = [
-  { kind: "item", href: "/", label: "Dashboard", icon: LayoutDashboard, sector: null },
-  { kind: "item", href: "/tarefas", label: "Tarefas", icon: SquareKanban, sector: null },
+  { kind: "item", href: "/", label: "Dashboard", icon: LayoutDashboard, modulo: null },
+  {
+    kind: "item",
+    href: "/tarefas",
+    label: "Tarefas",
+    icon: SquareKanban,
+    modulo: "TAREFAS",
+  },
+  {
+    kind: "group",
+    id: "operacao",
+    label: "Operação de posto",
+    icon: UserCheck,
+    children: [
+      { href: "/rh/efetivos", label: "Efetivos", icon: UserCheck, modulo: "EFETIVOS" },
+      {
+        href: "/rh/efetivos/ausencias",
+        label: "Ausências de cadastro",
+        icon: CalendarX2,
+        modulo: "EFETIVOS",
+      },
+      {
+        href: "/rh/relatorios",
+        label: "Relatórios de posto",
+        icon: ShieldCheck,
+        modulo: "RELATORIOS",
+      },
+    ],
+  },
   {
     kind: "group",
     id: "rh",
     label: "RH / Pessoas",
     icon: Users,
-    sector: "rh",
     href: "/rh",
+    hrefModulo: "COLABORADORES",
     children: [
-      { href: "/rh/espelhos", label: "Espelhos de ponto", icon: FileClock },
+      {
+        href: "/rh/espelhos",
+        label: "Espelhos de ponto",
+        icon: FileClock,
+        modulo: "ESPELHOS",
+      },
       {
         href: "/rh/fechamento",
         label: "Encerramento de espelho",
         icon: ClipboardCheck,
+        modulo: "FECHAMENTO",
       },
       {
         href: "/rh/pendencias",
         label: "Pendências documentais",
         icon: FileWarning,
+        modulo: "PENDENCIAS",
         editOnly: true,
       },
     ],
@@ -80,25 +125,44 @@ const NAV: NavEntry[] = [
     id: "escala",
     label: "Escala",
     icon: CalendarDays,
-    sector: "rh",
     children: [
-      { href: "/rh/escalas", label: "Escalas", icon: Repeat },
-      { href: "/rh/movimentos", label: "Movimentos", icon: CalendarClock },
+      { href: "/rh/escalas", label: "Escalas", icon: Repeat, modulo: "ESCALAS" },
+      {
+        href: "/rh/movimentos",
+        label: "Movimentos",
+        icon: CalendarClock,
+        modulo: "MOVIMENTOS",
+      },
       {
         href: "/rh/apontamento",
         label: "Apontamento",
         icon: ClipboardList,
+        modulo: "APONTAMENTO",
         editOnly: true,
-      },
-      { href: "/rh/efetivos", label: "Efetivos", icon: UserCheck },
-      {
-        href: "/rh/relatorios",
-        label: "Relatórios de posto",
-        icon: ShieldCheck,
       },
     ],
   },
-  { kind: "item", href: "/admin/usuarios", label: "Usuários", icon: Shield, sector: "admin" },
+  {
+    kind: "group",
+    id: "admin",
+    label: "Administração",
+    icon: Shield,
+    children: [
+      {
+        href: "/rh/departamentos",
+        label: "Departamentos",
+        icon: Building,
+        modulo: "DEPARTAMENTOS",
+        editOnly: true,
+      },
+      {
+        href: "/admin/usuarios",
+        label: "Usuários",
+        icon: Shield,
+        modulo: "USUARIOS",
+      },
+    ],
+  },
 ]
 
 function matches(pathname: string, href: string): boolean {
@@ -113,27 +177,35 @@ const ACTIVE_CLASSES =
   "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
 
 export function SidebarNav({
-  role,
+  access,
   onNavigate,
 }: {
-  role: Role
+  access: Access
   onNavigate?: () => void
 }) {
   const pathname = usePathname()
+
+  const visivel = (modulo: ModuloKey, editOnly?: boolean) =>
+    editOnly ? podeEditar(access, modulo) : podeVer(access, modulo)
 
   const entries = NAV.flatMap<
     | Extract<NavEntry, { kind: "item" }>
     | (Extract<NavEntry, { kind: "group" }> & { children: NavLeaf[] })
   >((entry) => {
     if (entry.kind === "item") {
-      return entry.sector === null || canView(role, entry.sector) ? [entry] : []
+      const ok = entry.modulo === null || visivel(entry.modulo, entry.editOnly)
+      return ok ? [entry] : []
     }
-    if (!canView(role, entry.sector)) return []
-    const children = entry.children.filter(
-      (leaf) => !leaf.editOnly || canEdit(role, entry.sector)
+    const children = entry.children.filter((leaf) =>
+      visivel(leaf.modulo, leaf.editOnly)
     )
-    if (children.length === 0 && !entry.href) return []
-    return [{ ...entry, children }]
+    const header =
+      entry.href && entry.hrefModulo && podeVer(access, entry.hrefModulo)
+        ? { href: entry.href }
+        : { href: undefined }
+    // grupo sem nenhum filho liberado e sem página própria some do menu
+    if (children.length === 0 && !header.href) return []
+    return [{ ...entry, ...header, children }]
   })
 
   // Item ativo = correspondência mais específica (href mais longo)

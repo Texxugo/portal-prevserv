@@ -1,6 +1,6 @@
 import { Download } from "lucide-react"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { competenciaSelectOptions, currentCompetencia } from "@/lib/competencia"
 import { PageHeader } from "@/components/layout/page-header"
@@ -45,7 +45,7 @@ export default async function ApontamentoPage({
 }: {
   searchParams: Promise<{ comp?: string }>
 }) {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("APONTAMENTO")
   const { comp } = await searchParams
   const competencia = comp || currentCompetencia()
 
