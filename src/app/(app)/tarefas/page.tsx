@@ -1,10 +1,10 @@
-import { requireUser } from "@/lib/auth-helpers"
+import { requireModulo } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { PageHeader } from "@/components/layout/page-header"
 import { BoardsGrid, type BoardCard } from "@/components/tarefas/boards-grid"
 
 export default async function TarefasPage() {
-  const user = await requireUser()
+  const user = await requireModulo("TAREFAS")
 
   const boards = await prisma.todoBoard.findMany({
     where: {

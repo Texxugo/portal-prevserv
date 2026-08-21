@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { apontamentoSchema } from "@/lib/schemas"
 
@@ -31,7 +31,7 @@ export type ApontamentoInput = {
 export async function salvarApontamento(
   input: ApontamentoInput
 ): Promise<{ ok: boolean; error?: string }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("APONTAMENTO")
 
   const parsed = apontamentoSchema.safeParse(input)
   if (!parsed.success) {

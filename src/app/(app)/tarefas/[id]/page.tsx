@@ -1,7 +1,7 @@
 import { ArrowLeft } from "lucide-react"
 import { notFound, redirect } from "next/navigation"
 
-import { requireUser } from "@/lib/auth-helpers"
+import { requireModulo } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { PageHeader } from "@/components/layout/page-header"
 import { ButtonLink } from "@/components/button-link"
@@ -17,7 +17,7 @@ export default async function TarefaBoardPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const user = await requireUser()
+  const user = await requireModulo("TAREFAS")
 
   const board = await prisma.todoBoard.findUnique({
     where: { id },

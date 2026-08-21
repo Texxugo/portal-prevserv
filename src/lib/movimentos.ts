@@ -18,9 +18,19 @@ function periodLabel(start: Date, end: Date | null): string {
   return end ? `${formatDate(start)} – ${formatDate(end)}` : formatDate(start)
 }
 
-export async function getMovimentos(competencia: string) {
+// `postos = null` traz todos; uma lista restringe aos colaboradores desses
+// postos (é o escopo do usuário chegando até a consulta).
+export async function getMovimentos(
+  competencia: string,
+  postos: string[] | null = null
+) {
   return prisma.movement.findMany({
-    where: { competencia },
+    where: {
+      competencia,
+      ...(postos === null
+        ? {}
+        : { employee: { departmentId: { in: postos } } }),
+    },
     orderBy: { startDate: "desc" },
     include: { employee: { select: { name: true } } },
   })

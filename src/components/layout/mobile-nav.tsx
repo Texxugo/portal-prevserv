@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Building2, Menu } from "lucide-react"
-import type { Role } from "@prisma/client"
+import type { Access } from "@/lib/permissions"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/sheet"
 import { SidebarNav } from "./sidebar-nav"
 
-export function MobileNav({ role }: { role: Role }) {
+export function MobileNav({ access }: { access: Access }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -44,7 +44,7 @@ export function MobileNav({ role }: { role: Role }) {
           </span>
         </div>
         <div className="px-3">
-          <SidebarNav role={role} onNavigate={() => setOpen(false)} />
+          <SidebarNav access={access} onNavigate={() => setOpen(false)} />
         </div>
       </SheetContent>
     </Sheet>

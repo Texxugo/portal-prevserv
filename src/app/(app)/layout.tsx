@@ -1,6 +1,6 @@
 import { Building2 } from "lucide-react"
 
-import { requireUser } from "@/lib/auth-helpers"
+import { requireAccess } from "@/lib/auth-helpers"
 import { Header } from "@/components/layout/header"
 import { SidebarNav } from "@/components/layout/sidebar-nav"
 import { TourProvider } from "@/components/tour/tour-provider"
@@ -10,7 +10,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode
 }) {
-  const user = await requireUser()
+  const access = await requireAccess()
 
   return (
     <TourProvider>
@@ -23,14 +23,12 @@ export default async function AppLayout({
             <span className="font-medium">Portal Interno</span>
           </div>
           <div className="flex-1 px-3 py-2">
-            <SidebarNav role={user.role} />
+            <SidebarNav access={access} />
           </div>
           <div className="p-4 text-xs text-sidebar-foreground/60">v0.1 · MVP</div>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <Header
-            user={{ name: user.name, email: user.email, role: user.role }}
-          />
+          <Header access={access} />
           <main className="flex-1 bg-muted/30 p-4 md:p-6">{children}</main>
         </div>
       </div>

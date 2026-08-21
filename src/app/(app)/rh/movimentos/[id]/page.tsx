@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { formatDateInput } from "@/lib/format"
 import { PageHeader } from "@/components/layout/page-header"
@@ -15,7 +15,7 @@ export default async function EditarMovimentacaoPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  await requireSectorEdit("rh")
+  await requireModuloEdit("MOVIMENTOS")
 
   const [movement, employees] = await Promise.all([
     prisma.movement.findUnique({

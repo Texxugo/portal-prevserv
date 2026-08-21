@@ -1,13 +1,13 @@
 import { ArrowLeft } from "lucide-react"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { PageHeader } from "@/components/layout/page-header"
 import { ButtonLink } from "@/components/button-link"
 import { DepartmentsManager } from "@/components/rh/departments-manager"
 
 export default async function DepartamentosPage() {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("DEPARTAMENTOS")
   const departments = await prisma.department.findMany({
     orderBy: { name: "asc" },
     include: { _count: { select: { employees: true } } },

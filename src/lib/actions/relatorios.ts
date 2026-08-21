@@ -2,8 +2,14 @@
 
 import { revalidatePath } from "next/cache"
 
-import { actorName, requireSector, requireSectorEdit } from "@/lib/auth-helpers"
+import {
+  actorName,
+  checkPostoEdit,
+  requireModulo,
+  requireModuloEdit,
+} from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
+import { podeVerPosto } from "@/lib/permissions"
 import { toFieldErrors, type FormState } from "@/lib/form"
 import { corrigirMensagem } from "@/lib/gemini"
 import { normalizePlaca, kmRodado } from "@/lib/relatorio/calculo"
@@ -25,14 +31,33 @@ function refresh(departmentId: string) {
   revalidatePath("/rh/relatorios/verificar")
 }
 
+// As ações abaixo recebem o id do relatório, não o do posto. O posto vem do
+// próprio registro e é conferido contra o escopo de quem chamou.
+async function permissaoPeloRelatorio(
+  id: string
+): Promise<{ departmentId: string } | { erro: string }> {
+  const relatorio = await prisma.relatorioDiario.findUnique({
+    where: { id },
+    select: { departmentId: true },
+  })
+  if (!relatorio) return { erro: "Relatório não encontrado." }
+  const permitido = await checkPostoEdit("RELATORIOS", relatorio.departmentId)
+  if ("erro" in permitido) return { erro: permitido.erro }
+  return { departmentId: relatorio.departmentId }
+}
+
 export async function saveRelatorioDiario(
   _prev: FormState,
   formData: FormData
 ): Promise<FormState> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("RELATORIOS")
   const parsed = relatorioDiarioSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { errors: toFieldErrors(parsed.error) }
   const data = parsed.data
+
+  if (!podeVerPosto(user, data.departmentId)) {
+    return { errors: { departmentId: ["Este posto não está no seu acesso."] } }
+  }
 
   const department = await prisma.department.findUnique({
     where: { id: data.departmentId },
@@ -171,9 +196,10 @@ export async function saveRelatorioDiario(
 }
 
 export async function deleteRelatorioDiario(id: string): Promise<Result> {
-  await requireSectorEdit("rh")
-  const relatorio = await prisma.relatorioDiario.delete({ where: { id } })
-  refresh(relatorio.departmentId)
+  const permitido = await permissaoPeloRelatorio(id)
+  if ("erro" in permitido) return { ok: false, error: permitido.erro }
+  await prisma.relatorioDiario.delete({ where: { id } })
+  refresh(permitido.departmentId)
   return { ok: true }
 }
 
@@ -185,7 +211,8 @@ export async function kmAnteriorPorPlaca(
   date: string,
   periodo: string
 ): Promise<{ kmFinal: number | null; kmProximaTroca: number | null }> {
-  await requireSectorEdit("rh")
+  const permitido = await checkPostoEdit("RELATORIOS", departmentId)
+  if ("erro" in permitido) return { kmFinal: null, kmProximaTroca: null }
   const normalizada = normalizePlaca(placa)
   if (!normalizada) return { kmFinal: null, kmProximaTroca: null }
 
@@ -216,7 +243,7 @@ export async function kmAnteriorPorPlaca(
 export async function corrigirTextoRelatorio(
   text: string
 ): Promise<{ ok: boolean; text?: string; error?: string }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("RELATORIOS")
   if (text.trim().length < 5) {
     return { ok: false, error: "Escreva o texto antes de corrigir." }
   }
@@ -231,7 +258,8 @@ export async function saveRelatorioModeloSecao(
   secao: string,
   labels: string[]
 ): Promise<Result> {
-  await requireSectorEdit("rh")
+  const permitido = await checkPostoEdit("RELATORIOS", departmentId)
+  if ("erro" in permitido) return { ok: false, error: permitido.erro }
   const parsed = relatorioModeloSecaoSchema.safeParse({
     departmentId,
     secao,
@@ -339,7 +367,8 @@ async function enviarAoGrupo(id: string): Promise<EnvioResult> {
 export async function reenviarRelatorioAoGrupo(
   id: string
 ): Promise<Result & { envio?: EnvioResult }> {
-  await requireSectorEdit("rh")
+  const permitido = await permissaoPeloRelatorio(id)
+  if ("erro" in permitido) return { ok: false, error: permitido.erro }
   const dados = await textoParaEnvio(id)
   if (!dados) return { ok: false, error: "Relatório não encontrado." }
   if (dados.status !== "FINALIZADO") {
@@ -360,7 +389,7 @@ export async function reenviarRelatorioAoGrupo(
 export async function finalizarRelatorio(
   id: string
 ): Promise<Result & { envio?: EnvioResult }> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("RELATORIOS")
 
   const relatorio = await prisma.relatorioDiario.findUnique({
     where: { id },
@@ -373,6 +402,9 @@ export async function finalizarRelatorio(
     },
   })
   if (!relatorio) return { ok: false, error: "Relatório não encontrado." }
+  if (!podeVerPosto(user, relatorio.departmentId)) {
+    return { ok: false, error: "Este posto não está no seu acesso." }
+  }
   if (relatorio.status === "FINALIZADO") {
     return { ok: false, error: "Este relatório já está finalizado." }
   }
@@ -409,7 +441,8 @@ export async function finalizarRelatorio(
 // Reabrir apaga o código: enquanto o relatório estiver em rascunho não existe
 // código válido para ele, e o próximo fechamento emite outro.
 export async function reabrirRelatorio(id: string): Promise<Result> {
-  await requireSectorEdit("rh")
+  const permitido = await permissaoPeloRelatorio(id)
+  if ("erro" in permitido) return { ok: false, error: permitido.erro }
   const relatorio = await prisma.relatorioDiario.update({
     where: { id },
     data: {
@@ -465,7 +498,7 @@ export type VerificacaoRelatorio = {
 export async function verificarCodigoRelatorio(
   entrada: string
 ): Promise<{ ok: boolean; error?: string; relatorio?: VerificacaoRelatorio }> {
-  const user = await requireSector("rh")
+  const user = await requireModulo("RELATORIOS")
 
   // aceita a mensagem colada (extrai o código de dentro) ou o código solto
   const normalizado = extrairCodigo(entrada) || normalizarCodigo(entrada)
@@ -500,6 +533,25 @@ export async function verificarCodigoRelatorio(
       ok: false,
       error:
         "Nenhum relatório finalizado com este código. Ou o texto não saiu do sistema, ou o relatório foi reaberto depois de enviado.",
+    }
+  }
+
+  // O código existe, mas é de posto fora do escopo: a consulta fica registrada
+  // (é justamente o tipo de tentativa que interessa auditar) e a resposta não
+  // revela o conteúdo do relatório.
+  if (!podeVerPosto(user, relatorio.departmentId)) {
+    await prisma.relatorioVerificacao.create({
+      data: {
+        codigo: normalizado,
+        resultado: "FORA_DO_ACESSO",
+        relatorioId: relatorio.id,
+        actorName: actorName(user),
+      },
+    })
+    return {
+      ok: false,
+      error:
+        "Este código é de um posto fora do seu acesso. Fale com um administrador para conferir.",
     }
   }
 

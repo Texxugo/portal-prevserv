@@ -1,7 +1,7 @@
 import { BarChart3, Plus } from "lucide-react"
 
-import { requireSector } from "@/lib/auth-helpers"
-import { canEdit } from "@/lib/permissions"
+import { requireModulo } from "@/lib/auth-helpers"
+import { podeEditar, postosPermitidos } from "@/lib/permissions"
 import { currentCompetencia } from "@/lib/competencia"
 import {
   buildTableRows,
@@ -18,14 +18,14 @@ export default async function MovimentosPage({
 }: {
   searchParams: Promise<{ comp?: string }>
 }) {
-  const user = await requireSector("rh")
-  const editable = canEdit(user.role, "rh")
+  const user = await requireModulo("MOVIMENTOS")
+  const editable = podeEditar(user, "MOVIMENTOS")
 
   const { comp } = await searchParams
   const competencia = comp || currentCompetencia()
 
   const [movements, options] = await Promise.all([
-    getMovimentos(competencia),
+    getMovimentos(competencia, postosPermitidos(user)),
     competenciaOptions(competencia),
   ])
   const tableRows = buildTableRows(movements)

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { Prisma } from "@prisma/client"
 
-import { actorName, requireSectorEdit } from "@/lib/auth-helpers"
+import { actorName, requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { isDocumentoAberto } from "@/lib/documentos"
 import { firstError } from "@/lib/form"
@@ -52,7 +52,7 @@ export async function createDocumentoPendencia(input: {
   followUpDate: string
   alreadyRequested?: boolean
 }): Promise<Result> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("PENDENCIAS")
   const parsed = documentoPendenciaSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) }
 
@@ -172,7 +172,7 @@ export async function updateDocumentoPendencia(
     followUpDate: string
   }
 ): Promise<Result> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("PENDENCIAS")
   const parsed = documentoPendenciaUpdateSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) }
 
@@ -235,7 +235,7 @@ export async function solicitarDocumento(
   id: string,
   input: { message: string; followUpDate: string }
 ): Promise<Result> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("PENDENCIAS")
   const parsed = documentoSolicitacaoSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) }
 
@@ -291,7 +291,7 @@ export async function receberDocumento(
   id: string,
   input: { externalUrl: string; notes?: string | null }
 ): Promise<Result> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("PENDENCIAS")
   const parsed = documentoRecebimentoSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) }
   const current = await prisma.documentoPendencia.findUnique({ where: { id } })
@@ -323,7 +323,7 @@ export async function receberDocumento(
 }
 
 export async function cancelarDocumento(id: string, reason: string): Promise<Result> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("PENDENCIAS")
   const parsed = documentoCancelamentoSchema.safeParse({ reason })
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) }
   const current = await prisma.documentoPendencia.findUnique({ where: { id } })
@@ -347,7 +347,7 @@ export async function reabrirDocumento(
   id: string,
   input: { reason: string; followUpDate: string }
 ): Promise<Result> {
-  const user = await requireSectorEdit("rh")
+  const user = await requireModuloEdit("PENDENCIAS")
   const parsed = documentoReaberturaSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) }
   const current = await prisma.documentoPendencia.findUnique({ where: { id } })
@@ -383,7 +383,7 @@ export async function reabrirDocumento(
 export async function corrigirMensagemDocumento(
   text: string
 ): Promise<{ ok: boolean; text?: string; error?: string }> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("PENDENCIAS")
   if (text.trim().length < 5) {
     return { ok: false, error: "Escreva a mensagem antes de corrigir." }
   }
@@ -391,7 +391,7 @@ export async function corrigirMensagemDocumento(
 }
 
 export async function createDocumentoTipo(name: string): Promise<Result> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("PENDENCIAS")
   const parsed = documentoTipoSchema.safeParse({ name })
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) }
   try {
@@ -407,7 +407,7 @@ export async function createDocumentoTipo(name: string): Promise<Result> {
 }
 
 export async function updateDocumentoTipo(id: string, name: string): Promise<Result> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("PENDENCIAS")
   const parsed = documentoTipoSchema.safeParse({ name })
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) }
   try {
@@ -424,7 +424,7 @@ export async function updateDocumentoTipo(id: string, name: string): Promise<Res
 }
 
 export async function setDocumentoTipoActive(id: string, active: boolean): Promise<Result> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("PENDENCIAS")
   await prisma.documentoTipo.update({ where: { id }, data: { active } })
   revalidatePath("/rh/pendencias/tipos")
   revalidatePath("/rh/pendencias")

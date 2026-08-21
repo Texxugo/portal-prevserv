@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requirePostoEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import {
   baseDepartmentIds,
@@ -12,11 +12,14 @@ import { EfetivoLoteForm } from "@/components/rh/efetivo-lote-form"
 
 export default async function NovoEfetivoPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ deptId: string }>
+  searchParams: Promise<{ date?: string; periodo?: string }>
 }) {
   const { deptId } = await params
-  await requireSectorEdit("rh")
+  const { date, periodo } = await searchParams
+  await requirePostoEdit("EFETIVOS", deptId)
 
   const [department, baseIds] = await Promise.all([
     prisma.department.findUnique({
@@ -49,6 +52,10 @@ export default async function NovoEfetivoPage({
         baseEmployees={baseEmployees}
         departmentId={department.id}
         departmentName={department.name}
+        defaultDate={date}
+        defaultPeriodo={
+          periodo === "DIURNO" || periodo === "NOTURNO" ? periodo : undefined
+        }
       />
     </div>
   )

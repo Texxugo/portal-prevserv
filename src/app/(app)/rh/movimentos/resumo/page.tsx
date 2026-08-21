@@ -1,6 +1,7 @@
 import { ArrowLeft } from "lucide-react"
 
-import { requireSector } from "@/lib/auth-helpers"
+import { requireModulo } from "@/lib/auth-helpers"
+import { postosPermitidos } from "@/lib/permissions"
 import { currentCompetencia } from "@/lib/competencia"
 import {
   buildMatrixRows,
@@ -17,13 +18,13 @@ export default async function ResumoMovimentosPage({
 }: {
   searchParams: Promise<{ comp?: string }>
 }) {
-  await requireSector("rh")
+  const user = await requireModulo("MOVIMENTOS")
 
   const { comp } = await searchParams
   const competencia = comp || currentCompetencia()
 
   const [movements, options] = await Promise.all([
-    getMovimentos(competencia),
+    getMovimentos(competencia, postosPermitidos(user)),
     competenciaOptions(competencia),
   ])
   const matrixRows = buildMatrixRows(movements)

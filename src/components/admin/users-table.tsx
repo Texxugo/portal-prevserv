@@ -18,6 +18,9 @@ export type UserRow = {
   email: string
   role: Role
   active: boolean
+  // null = sem restrição (o perfil ADMIN, ou o escopo "todos os postos")
+  modulos: number | null
+  postos: number | null
 }
 
 export function UsersTable({
@@ -46,6 +49,30 @@ export function UsersTable({
       cell: ({ row }) => (
         <Badge variant="secondary">{ROLE_LABELS[row.original.role]}</Badge>
       ),
+    },
+    {
+      accessorKey: "modulos",
+      header: "Módulos",
+      cell: ({ row }) =>
+        row.original.modulos === null ? (
+          <span className="text-muted-foreground">todos</span>
+        ) : row.original.modulos === 0 ? (
+          <span className="text-destructive">nenhum</span>
+        ) : (
+          row.original.modulos
+        ),
+    },
+    {
+      accessorKey: "postos",
+      header: "Postos",
+      cell: ({ row }) =>
+        row.original.postos === null ? (
+          <span className="text-muted-foreground">todos</span>
+        ) : row.original.postos === 0 ? (
+          <span className="text-destructive">nenhum</span>
+        ) : (
+          row.original.postos
+        ),
     },
     {
       accessorKey: "active",

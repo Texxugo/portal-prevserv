@@ -1,4 +1,4 @@
-import { requireSector } from "@/lib/auth-helpers"
+import { requireModulo } from "@/lib/auth-helpers"
 import { PageHeader } from "@/components/layout/page-header"
 import { ButtonLink } from "@/components/button-link"
 import { RelatorioVerificarForm } from "@/components/rh/relatorio-verificar-form"
@@ -8,7 +8,7 @@ export default async function VerificarRelatorioPage({
 }: {
   searchParams: Promise<{ codigo?: string }>
 }) {
-  await requireSector("rh")
+  await requireModulo("RELATORIOS")
   const { codigo } = await searchParams
 
   return (

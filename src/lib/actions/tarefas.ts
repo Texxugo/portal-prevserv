@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { Prisma } from "@prisma/client"
 
-import { actorName, requireUser } from "@/lib/auth-helpers"
+import { actorName, requireModuloEdit } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { firstError } from "@/lib/form"
 import { todoBoardSchema, todoColumnSchema, todoTaskSchema } from "@/lib/schemas"
@@ -58,7 +58,7 @@ export async function createBoard(input: {
   name: string
   description?: string | null
 }): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   const parsed = todoBoardSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) }
 
@@ -85,7 +85,7 @@ export async function updateBoard(
   boardId: string,
   input: { name: string; description?: string | null }
 ): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   if (!(await getBoardIfOwner(boardId, user.id))) {
     return { ok: false, error: SO_DONO }
   }
@@ -101,7 +101,7 @@ export async function updateBoard(
 }
 
 export async function deleteBoard(boardId: string): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   if (!(await getBoardIfOwner(boardId, user.id))) {
     return { ok: false, error: SO_DONO }
   }
@@ -118,7 +118,7 @@ export async function deleteBoard(boardId: string): Promise<Result> {
 // ---------- Membros ----------
 
 export async function addMember(boardId: string, userId: string): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   const board = await prisma.todoBoard.findFirst({
     where: { id: boardId, ownerId: user.id },
     select: { ownerId: true },
@@ -154,7 +154,7 @@ export async function addMember(boardId: string, userId: string): Promise<Result
 }
 
 export async function removeMember(boardId: string, userId: string): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   if (!(await getBoardIfOwner(boardId, user.id))) {
     return { ok: false, error: SO_DONO }
   }
@@ -173,7 +173,7 @@ export async function removeMember(boardId: string, userId: string): Promise<Res
 // ---------- Colunas ----------
 
 export async function addColumn(boardId: string, name: string): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   if (!(await getBoardIfOwner(boardId, user.id))) {
     return { ok: false, error: SO_DONO }
   }
@@ -192,7 +192,7 @@ export async function addColumn(boardId: string, name: string): Promise<Result> 
 }
 
 export async function renameColumn(columnId: string, name: string): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   const col = await prisma.todoColumn.findUnique({
     where: { id: columnId },
     select: { boardId: true },
@@ -212,7 +212,7 @@ export async function renameColumn(columnId: string, name: string): Promise<Resu
 }
 
 export async function deleteColumn(columnId: string): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   const col = await prisma.todoColumn.findUnique({
     where: { id: columnId },
     include: { _count: { select: { tasks: true } } },
@@ -289,7 +289,7 @@ export async function createTask(
   boardId: string,
   input: TaskInput & { columnId?: string | null }
 ): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   if (!(await getBoardIfMember(boardId, user.id))) {
     return { ok: false, error: SEM_ACESSO }
   }
@@ -328,7 +328,7 @@ export async function createTask(
 }
 
 export async function updateTask(taskId: string, input: TaskInput): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   const task = await prisma.todoTask.findUnique({
     where: { id: taskId },
     select: { boardId: true },
@@ -361,7 +361,7 @@ export async function moveTask(
   taskId: string,
   input: { columnId: string; index: number }
 ): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   const task = await prisma.todoTask.findUnique({
     where: { id: taskId },
     select: { boardId: true, columnId: true },
@@ -403,7 +403,7 @@ export async function moveTask(
 
 // Visão lista: concluir move p/ coluna isDone; desmarcar volta p/ 1ª coluna comum.
 export async function toggleTaskDone(taskId: string, done: boolean): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   const task = await prisma.todoTask.findUnique({
     where: { id: taskId },
     select: { boardId: true, columnId: true },
@@ -431,7 +431,7 @@ export async function toggleTaskDone(taskId: string, done: boolean): Promise<Res
 }
 
 export async function deleteTask(taskId: string): Promise<Result> {
-  const user = await requireUser()
+  const user = await requireModuloEdit("TAREFAS")
   const task = await prisma.todoTask.findUnique({
     where: { id: taskId },
     select: { boardId: true, columnId: true },

@@ -1,25 +1,20 @@
-import type { Role } from "@prisma/client"
-
-import { canEdit } from "@/lib/permissions"
+import { podeEditar, type Access } from "@/lib/permissions"
 import { MobileNav } from "./mobile-nav"
 import { NotificationBell } from "./notification-bell"
 import { ThemeToggle } from "./theme-toggle"
 import { UserMenu } from "./user-menu"
 import { HelpButton } from "@/components/tour/help-button"
 
-export function Header({
-  user,
-}: {
-  user: { name?: string | null; email?: string | null; role: Role }
-}) {
+export function Header({ access }: { access: Access }) {
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <MobileNav role={user.role} />
+      <MobileNav access={access} />
       <div className="flex-1" />
-      {canEdit(user.role, "rh") && <NotificationBell />}
+      {/* o sino cobra documento pendente: só faz sentido para quem trata a cobrança */}
+      {podeEditar(access, "PENDENCIAS") && <NotificationBell />}
       <HelpButton />
       <ThemeToggle />
-      <UserMenu name={user.name} email={user.email} role={user.role} />
+      <UserMenu name={access.name} email={access.email} role={access.role} />
     </header>
   )
 }

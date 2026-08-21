@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import type { z } from "zod"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { competenciaFromDate } from "@/lib/competencia"
 import { prisma } from "@/lib/db"
 import { toFieldErrors, type FormState } from "@/lib/form"
@@ -26,7 +26,7 @@ export async function createMovement(
   _prev: FormState,
   formData: FormData
 ): Promise<FormState> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("MOVIMENTOS")
   const parsed = movementSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { errors: toFieldErrors(parsed.error) }
 
@@ -41,7 +41,7 @@ export async function updateMovement(
   _prev: FormState,
   formData: FormData
 ): Promise<FormState> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("MOVIMENTOS")
   const parsed = movementSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { errors: toFieldErrors(parsed.error) }
 
@@ -52,7 +52,7 @@ export async function updateMovement(
 }
 
 export async function deleteMovement(id: string): Promise<void> {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("MOVIMENTOS")
   await prisma.movement.delete({ where: { id } })
   revalidatePath("/rh/movimentos")
 }

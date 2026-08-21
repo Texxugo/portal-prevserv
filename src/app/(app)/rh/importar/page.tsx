@@ -1,13 +1,13 @@
 import { ArrowLeft } from "lucide-react"
 
-import { requireSectorEdit } from "@/lib/auth-helpers"
+import { requireModuloEdit } from "@/lib/auth-helpers"
 import { importEmployees } from "@/lib/actions/import"
 import { PageHeader } from "@/components/layout/page-header"
 import { ButtonLink } from "@/components/button-link"
 import { ImportPanel } from "@/components/import-panel"
 
 export default async function ImportarColaboradoresPage() {
-  await requireSectorEdit("rh")
+  await requireModuloEdit("COLABORADORES")
 
   return (
     <div>

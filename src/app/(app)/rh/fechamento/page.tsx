@@ -1,10 +1,10 @@
 import { Download, Lock } from "lucide-react"
 
-import { requireSector } from "@/lib/auth-helpers"
+import { requireModulo } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { competenciaSelectOptions, currentCompetencia } from "@/lib/competencia"
 import { formatDate } from "@/lib/format"
-import { canEdit } from "@/lib/permissions"
+import { podeEditar } from "@/lib/permissions"
 import { getTiposAtivos, getTolerancia } from "@/lib/espelho/config"
 import { PageHeader } from "@/components/layout/page-header"
 import { CompetenciaSelect } from "@/components/competencia-select"
@@ -26,8 +26,8 @@ export default async function FechamentoPage({
 }: {
   searchParams: Promise<{ comp?: string }>
 }) {
-  const user = await requireSector("rh")
-  const editable = canEdit(user.role, "rh")
+  const user = await requireModulo("FECHAMENTO")
+  const editable = podeEditar(user, "FECHAMENTO")
   const { comp } = await searchParams
   const competencia = comp || currentCompetencia()
 

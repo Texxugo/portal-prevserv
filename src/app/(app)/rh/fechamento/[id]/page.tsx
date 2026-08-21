@@ -1,11 +1,11 @@
 import { ArrowLeft } from "lucide-react"
 import { notFound } from "next/navigation"
 
-import { requireSector } from "@/lib/auth-helpers"
+import { requireModulo } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { competenciaLabel } from "@/lib/competencia"
 import { formatDate } from "@/lib/format"
-import { canEdit } from "@/lib/permissions"
+import { podeEditar } from "@/lib/permissions"
 import { PageHeader } from "@/components/layout/page-header"
 import { ButtonLink } from "@/components/button-link"
 import {
@@ -22,7 +22,7 @@ export default async function FechamentoDetailPage({
 }) {
   const { id } = await params
   const { comp } = await searchParams
-  const user = await requireSector("rh")
+  const user = await requireModulo("FECHAMENTO")
 
   const f = await prisma.espelhoFechamento.findUnique({
     where: { id },
@@ -39,7 +39,7 @@ export default async function FechamentoDetailPage({
   })
   const locked = compInfo?.status === "FECHADA"
 
-  const canManageDocuments = canEdit(user.role, "rh")
+  const canManageDocuments = podeEditar(user, "FECHAMENTO")
   const documentPendencias = canManageDocuments
     ? await prisma.documentoPendencia.findMany({
         where: {
