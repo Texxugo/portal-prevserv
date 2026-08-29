@@ -76,14 +76,11 @@ export async function importEmployees(
   let inserted = 0
   let updated = 0
   for (const item of aplicar) {
-    // Sexo só entra quando o arquivo trouxe a coluna: sem ela, o valor vazio
-    // apagaria o que já estava preenchido no cadastro.
     const data = {
       name: item.cells.name,
       empresa: item.cells.empresa || null,
       matricula: item.cells.matricula || null,
       cpf: item.cells.cpf || null,
-      ...(item.cells.sexo ? { sexo: item.cells.sexo } : {}),
     }
     try {
       if (item.alvoId) {

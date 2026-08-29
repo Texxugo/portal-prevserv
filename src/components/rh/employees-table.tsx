@@ -1,6 +1,6 @@
 "use client"
 
-import { BellOff, MapPinOff, Pencil } from "lucide-react"
+import { Pencil } from "lucide-react"
 import type { ColumnDef } from "@tanstack/react-table"
 
 import { deleteEmployee } from "@/lib/actions/rh"
@@ -20,8 +20,6 @@ export type EmployeeRow = {
   department: string | null
   status: string
   onDutyToday: boolean | null
-  semLocalizacao: boolean
-  optOut: boolean
 }
 
 const STATUS: Record<string, { label: string; className: string }> = {
@@ -51,25 +49,9 @@ export function EmployeesTable({
       accessorKey: "name",
       header: "Nome",
       cell: ({ row }) => (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <span className="font-medium">{row.original.name}</span>
           <OnDutyBadge onDuty={row.original.onDutyToday} />
-          {row.original.optOut && (
-            <Badge
-              variant="secondary"
-              title="Pediu para não receber convites de extra por WhatsApp"
-            >
-              <BellOff /> Não perturbar
-            </Badge>
-          )}
-          {row.original.semLocalizacao && (
-            <Badge
-              variant="outline"
-              title="Sem endereço geolocalizado — não aparece no painel operacional"
-            >
-              <MapPinOff /> Fora do mapa
-            </Badge>
-          )}
         </div>
       ),
     },

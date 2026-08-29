@@ -2,26 +2,21 @@ import { Building, Plus, Upload } from "lucide-react"
 
 import { requireModulo } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
-import { contarPendentesGeocode } from "@/lib/geo/geocodificar"
 import { filtroDepartmentId, podeEditar } from "@/lib/permissions"
 import { buildDayResolver, hasResolverSchedule } from "@/lib/jornada"
 import { PageHeader } from "@/components/layout/page-header"
 import { ButtonLink } from "@/components/button-link"
 import { EmployeesTable, type EmployeeRow } from "@/components/rh/employees-table"
-import { LocalizarPendentes } from "@/components/rh/department-endereco"
 
 export default async function RhPage() {
   const user = await requireModulo("COLABORADORES")
   const editable = podeEditar(user, "COLABORADORES")
 
-  const [employees, pendentes] = await Promise.all([
-    prisma.employee.findMany({
-      where: filtroDepartmentId(user),
-      orderBy: { name: "asc" },
-      include: { department: true, escala: { select: { cycleDays: true } } },
-    }),
-    contarPendentesGeocode(),
-  ])
+  const employees = await prisma.employee.findMany({
+    where: filtroDepartmentId(user),
+    orderBy: { name: "asc" },
+    include: { department: true, escala: { select: { cycleDays: true } } },
+  })
 
   const hoje = new Date()
 
@@ -44,11 +39,6 @@ export default async function RhPage() {
       department: e.department?.name ?? null,
       status: e.status,
       onDutyToday,
-      // Só é "fora do mapa" quem tem endereço e mesmo assim não virou
-      // coordenada — quem nunca preencheu nada não precisa de alerta.
-      semLocalizacao:
-        e.lat === null && !!(e.cep || e.logradouro || e.endereco),
-      optOut: e.whatsappOptOut,
     }
   })
 
@@ -83,12 +73,6 @@ export default async function RhPage() {
           </>
         )}
       </PageHeader>
-
-      {editable && (
-        <div className="mb-4">
-          <LocalizarPendentes alvo="COLABORADORES" pendentes={pendentes.colaboradores} />
-        </div>
-      )}
 
       <div data-tour="rh-tabela">
         <EmployeesTable data={data} canEdit={editable} />

@@ -28,36 +28,3 @@ export function formatDateTime(date: Date | string | null | undefined): string {
   }).format(new Date(date))
 }
 
-// O cadastro guarda nome em CAIXA ALTA (vem assim da folha). Em mensagem para o
-// colaborador isso soa como grito, então converte para caixa de título.
-//
-// Conectivos ficam minúsculos ("Luis Felipe dos Santos Ferreira", não "Dos
-// Santos"), exceto quando abrem o nome. Partículas com apóstrofo ("D'Ávila") e
-// hifenizadas ("Maria-Clara") mantêm a maiúscula depois do separador.
-const CONECTIVOS = new Set(["de", "da", "do", "das", "dos", "e", "di", "du", "del", "van", "von", "y"])
-
-function capitalizarParte(parte: string): string {
-  return parte.replace(
-    /[\p{L}][\p{L}\p{M}]*/gu,
-    (p) => p.charAt(0).toLocaleUpperCase("pt-BR") + p.slice(1).toLocaleLowerCase("pt-BR")
-  )
-}
-
-export function nomeProprio(nome: string | null | undefined): string {
-  const limpo = (nome ?? "").trim().replace(/\s+/g, " ")
-  if (!limpo) return ""
-
-  return limpo
-    .split(" ")
-    .map((palavra, i) => {
-      const minuscula = palavra.toLocaleLowerCase("pt-BR")
-      if (i > 0 && CONECTIVOS.has(minuscula)) return minuscula
-      return capitalizarParte(palavra)
-    })
-    .join(" ")
-}
-
-/** Primeiro nome, já em caixa de título — para o vocativo das mensagens. */
-export function primeiroNome(nome: string | null | undefined): string {
-  return nomeProprio(nome).split(" ")[0] ?? ""
-}

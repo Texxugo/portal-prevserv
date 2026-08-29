@@ -94,62 +94,6 @@ export async function sendText(
   return postText(phone, message)
 }
 
-export type BotaoWhatsapp = { id: string; label: string }
-
-/**
- * Mensagem com botões de resposta. Nem toda conexão da Z-API aceita botões
- * (depende do tipo de conta do WhatsApp), então a falha aqui NÃO é erro: o
- * chamador cai para `sendText` com as opções numeradas, e o webhook entende as
- * duas formas de resposta.
- */
-export async function sendButtons(
-  phoneRaw: string,
-  message: string,
-  botoes: BotaoWhatsapp[]
-): Promise<SendResult> {
-  const phone = normalizePhone(phoneRaw)
-  if (!phone || phone.length < 12) {
-    return { ok: false, error: "Telefone do colaborador ausente ou inválido." }
-  }
-
-  const instance = process.env.ZAPI_INSTANCE
-  const token = process.env.ZAPI_TOKEN
-  const clientToken = process.env.ZAPI_CLIENT_TOKEN
-  if (!instance || !token) {
-    return { ok: false, error: "Z-API não configurada." }
-  }
-
-  try {
-    const res = await fetch(
-      `${BASE}/instances/${instance}/token/${token}/send-button-list`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(clientToken ? { "Client-Token": clientToken } : {}),
-        },
-        body: JSON.stringify({
-          phone,
-          message,
-          buttonList: { buttons: botoes.map((b) => ({ id: b.id, label: b.label })) },
-        }),
-      }
-    )
-    const data = (await res.json().catch(() => null)) as
-      | { messageId?: string; id?: string; error?: string; message?: string }
-      | null
-    if (!res.ok) {
-      return {
-        ok: false,
-        error: data?.error || data?.message || `HTTP ${res.status}`,
-      }
-    }
-    return { ok: true, messageId: data?.messageId || data?.id }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Falha ao enviar" }
-  }
-}
-
 // Envio ao grupo do posto (relatório diário).
 export async function sendGroupText(
   grupoIdRaw: string,

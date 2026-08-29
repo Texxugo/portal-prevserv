@@ -24,14 +24,10 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ConfirmDelete } from "@/components/confirm-delete"
-import {
-  EnderecoDialog,
-  EnderecoField,
-  LocalizarPendentes,
-  type DeptEndereco,
-} from "@/components/rh/department-endereco"
 
-type Dept = DeptEndereco & {
+type Dept = {
+  id: string
+  name: string
   count: number
   whatsappGrupoId: string | null
 }
@@ -129,13 +125,7 @@ function AddButton() {
   )
 }
 
-export function DepartmentsManager({
-  departments,
-  postosSemCoordenada,
-}: {
-  departments: Dept[]
-  postosSemCoordenada: number
-}) {
+export function DepartmentsManager({ departments }: { departments: Dept[] }) {
   const router = useRouter()
   const [state, action] = useActionState<FormState, FormData>(
     createDepartment,
@@ -147,7 +137,6 @@ export function DepartmentsManager({
   const [grupos, setGrupos] = useState<GrupoWhatsapp[] | null>(null)
   const [carregando, setCarregando] = useState(false)
   const [alvo, setAlvo] = useState<Dept | null>(null)
-  const [enderecoDe, setEnderecoDe] = useState<DeptEndereco | null>(null)
   const [salvandoEscolha, startEscolha] = useTransition()
 
   useEffect(() => {
@@ -198,8 +187,6 @@ export function DepartmentsManager({
 
   return (
     <div className="space-y-4">
-      <LocalizarPendentes alvo="POSTOS" pendentes={postosSemCoordenada} />
-
       <form
         ref={formRef}
         action={action}
@@ -244,7 +231,6 @@ export function DepartmentsManager({
                   successMessage="Departamento excluído."
                 />
               </div>
-              <EnderecoField dept={d} onEditar={setEnderecoDe} />
               <GrupoField
                 dept={d}
                 grupos={grupos}
@@ -262,8 +248,6 @@ export function DepartmentsManager({
         <code className="font-mono">120263358412332916-group</code>. Não é o
         telefone.
       </p>
-
-      <EnderecoDialog dept={enderecoDe} onClose={() => setEnderecoDe(null)} />
 
       <Dialog open={alvo !== null} onOpenChange={(o) => !o && setAlvo(null)}>
         <DialogContent className="max-h-[80vh] overflow-y-auto">
