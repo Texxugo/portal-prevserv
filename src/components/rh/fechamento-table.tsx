@@ -81,7 +81,7 @@ export function FechamentoTable({
           <ButtonLink
             variant="outline"
             size="sm"
-            href={`/rh/fechamento/${row.original.id}?comp=${competencia}`}
+            href={`/rh/ponto/${row.original.id}?comp=${competencia}`}
           >
             Ver
           </ButtonLink>

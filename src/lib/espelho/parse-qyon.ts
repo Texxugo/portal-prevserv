@@ -1,23 +1,18 @@
 import { competenciaRange } from "../competencia"
+import { decodeTexto } from "../decode-texto"
 
 export type EspelhoDia = { data: Date; marcacoes: string[] }
 export type EspelhoColaborador = {
   matricula: string
   nome: string
+  // Código "Emp." do relatório (não é a razão social gravada em Employee.empresa).
+  // Só serve para distinguir duas linhas que reusam a mesma matrícula.
+  empresa: string | null
   dias: EspelhoDia[]
 }
 
-// Decodifica tentando UTF-8; se aparecer caractere de substituição (arquivo latin1),
-// refaz com windows-1252.
-function decode(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf)
-  const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(bytes)
-  if (!utf8.includes("�")) return utf8
-  return new TextDecoder("windows-1252", { fatal: false }).decode(bytes)
-}
-
 // ---- Relatório "Marcações Agrupadas por Data" (blocos por colaborador, ano 2 díg) ----
-const HEADER_RE = /Emp\.:\s*\d+\s+Matrícu\s*(\S+)\s+Nome:(.*)$/
+const HEADER_RE = /Emp\.:\s*(\d+)\s+Matrícu\s*(\S+)\s+Nome:(.*)$/
 const DAY_RE = /^\s*(\d{2})\/(\d{2})\/\d{2}(.*)$/
 
 function parseAgrupadas(
@@ -35,7 +30,12 @@ function parseAgrupadas(
   for (const line of lines) {
     const header = HEADER_RE.exec(line)
     if (header) {
-      current = { matricula: header[1].trim(), nome: header[2].trim(), dias: [] }
+      current = {
+        empresa: header[1].trim(),
+        matricula: header[2].trim(),
+        nome: header[3].trim(),
+        dias: [],
+      }
       result.push(current)
       continue
     }
@@ -78,7 +78,7 @@ function parseSimplificado(lines: string[]): EspelhoColaborador[] {
     const chave = `${empresa}|${matricula}`
     let col = byKey.get(chave)
     if (!col) {
-      col = { matricula, nome, dias: [] }
+      col = { empresa, matricula, nome, dias: [] }
       byKey.set(chave, col)
       order.push(chave)
     }
@@ -109,7 +109,7 @@ export function parseQyonEspelho(
   buf: ArrayBuffer,
   competencia: string
 ): EspelhoColaborador[] {
-  const text = decode(buf)
+  const text = decodeTexto(buf)
   const lines = text.split(/\r?\n/)
   if (/Simplificada/i.test(text)) {
     return parseSimplificado(lines)

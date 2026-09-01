@@ -1,16 +1,14 @@
 "use server"
 
+import { createHash } from "node:crypto"
 import { revalidatePath } from "next/cache"
 
 import { actorName, requireModuloEdit } from "@/lib/auth-helpers"
+import { competenciaLabel, currentCompetencia } from "@/lib/competencia"
 import { prisma } from "@/lib/db"
 import { buildEmployeeIndex } from "@/lib/employee-match"
 import { formatDate } from "@/lib/format"
-import {
-  buildDayResolver,
-  hasResolverSchedule,
-  EMPLOYEE_JORNADA_SELECT,
-} from "@/lib/jornada"
+import { EMPLOYEE_JORNADA_SELECT } from "@/lib/jornada"
 import { setSetting } from "@/lib/settings"
 import {
   getTolerancia,
@@ -20,17 +18,19 @@ import {
   TODOS_TIPOS,
 } from "@/lib/espelho/config"
 import {
-  detectarOcorrencias,
   OCORRENCIA_LABEL,
   type OcorrenciaTipo,
 } from "@/lib/espelho/detectar-fechamento"
 import {
-  periodoDe,
-  parseQyonEspelho,
-  type EspelhoDia,
-} from "@/lib/espelho/parse-qyon"
-import { aplicarVirada } from "@/lib/espelho/virada"
-import { competenciaRange } from "@/lib/competencia"
+  analisarPeriodo,
+  desserializarDias,
+  janelaAcumulada,
+  planejarImport,
+  recomputarFechamentos,
+  serializarDias,
+  type OcorrenciaPlanejada,
+} from "@/lib/espelho/import"
+import { parseQyonEspelho, type EspelhoDia } from "@/lib/espelho/parse-qyon"
 
 const COMPETENCIA_FECHADA_MSG =
   "Competência fechada — reabra a competência para alterar."
@@ -39,19 +39,54 @@ function tipoLabel(tipo: string): string {
   return OCORRENCIA_LABEL[tipo as OcorrenciaTipo] ?? tipo
 }
 
+type OcorrenciaRow = {
+  fechamentoId: string
+  data: Date
+  tipo: string
+  detalhe: string
+  marcacoes: string
+  justificativaCategoria: string | null
+  justificativaObs: string | null
+  resolvido: boolean
+}
+
+type EventoRow = {
+  fechamentoId: string
+  action: string
+  description: string
+  actorUserId: string
+  actorName: string
+}
+
+function ocorrenciaRow(
+  fechamentoId: string,
+  o: OcorrenciaPlanejada
+): OcorrenciaRow {
+  return {
+    fechamentoId,
+    data: o.data,
+    tipo: o.tipo,
+    detalhe: o.detalhe,
+    marcacoes: o.marcacoes.join(" "),
+    justificativaCategoria: o.justificativaCategoria,
+    justificativaObs: o.justificativaObs,
+    resolvido: o.resolvido,
+  }
+}
+
 export async function setTolerancia(min: number): Promise<{ ok: boolean }> {
-  await requireModuloEdit("FECHAMENTO")
+  await requireModuloEdit("PONTO")
   const v = String(Math.max(0, Math.floor(min || 0)))
   await setSetting(TOLERANCIA_KEY, v)
-  revalidatePath("/rh/fechamento")
+  revalidatePath("/rh/ponto")
   return { ok: true }
 }
 
 export async function setTiposAtivos(list: string[]): Promise<{ ok: boolean }> {
-  await requireModuloEdit("FECHAMENTO")
+  await requireModuloEdit("PONTO")
   const valid = list.filter((t) => TODOS_TIPOS.includes(t))
   await setSetting(TIPOS_ATIVOS_KEY, valid.join(","))
-  revalidatePath("/rh/fechamento")
+  revalidatePath("/rh/ponto")
   return { ok: true }
 }
 
@@ -75,57 +110,29 @@ export type FechamentoImportState =
         encerradosPulados: number
         semJornadaNomes: string[]
         naoEncontradosNomes: string[]
+        pendencias: number
+        periodo: string
+        // Mesmo conteúdo já importado antes nesta competência: aviso, não bloqueio —
+        // reimportar o mesmo período é idempotente.
+        duplicado: boolean
       }
     }
   | undefined
 
-type CarryMap = Map<
-  string,
-  { cat: string | null; obs: string | null; resolvido: boolean }
->
-
-function carryKey(data: Date, tipo: string): string {
-  return `${data.toISOString()}|${tipo}`
-}
-
-function buildCarry(
-  ocorrencias: {
-    data: Date
-    tipo: string
-    justificativaCategoria: string | null
-    justificativaObs: string | null
-    resolvido: boolean
-  }[]
-): CarryMap {
-  const map: CarryMap = new Map()
-  for (const o of ocorrencias) {
-    map.set(carryKey(o.data, o.tipo), {
-      cat: o.justificativaCategoria,
-      obs: o.justificativaObs,
-      resolvido: o.resolvido,
-    })
-  }
-  return map
+function hashArquivo(buf: ArrayBuffer): string {
+  return createHash("sha256").update(Buffer.from(buf)).digest("hex")
 }
 
 export async function importarEspelhoFechamento(
   _prev: FechamentoImportState,
   formData: FormData
 ): Promise<FechamentoImportState> {
-  const user = await requireModuloEdit("FECHAMENTO")
+  const user = await requireModuloEdit("PONTO")
 
   const file = formData.get("file")
-  const competencia = String(formData.get("competencia") || "")
-  const origem =
-    String(formData.get("origem") || "") === "ESPELHOS" ? "ESPELHOS" : "FECHAMENTO"
+  const competenciaSelecionada = String(formData.get("competencia") || "")
   if (!(file instanceof File) || file.size === 0) {
     return { status: "error", message: "Selecione o arquivo TXT do espelho." }
-  }
-  if (!competencia) {
-    return { status: "error", message: "Selecione a competência." }
-  }
-  if (await isCompetenciaFechada(competencia)) {
-    return { status: "error", message: COMPETENCIA_FECHADA_MSG }
   }
 
   // Quando presente, grava SOMENTE estas matrículas (curadoria feita no preview dos Espelhos).
@@ -136,25 +143,62 @@ export async function importarEspelhoFechamento(
       .filter(Boolean)
   )
 
+  const buf = await file.arrayBuffer()
+  const fileHash = hashArquivo(buf)
+
+  // O relatório "Marcações Agrupadas" traz o ano com 2 dígitos, então o parser precisa
+  // de uma competência como palpite para montar as datas. Dia e mês vêm do arquivo — é
+  // o que permite conferir depois se o palpite estava certo.
+  const palpite = competenciaSelecionada || currentCompetencia()
   let colaboradores
   try {
-    colaboradores = parseQyonEspelho(await file.arrayBuffer(), competencia)
+    colaboradores = parseQyonEspelho(buf, palpite)
   } catch {
     return { status: "error", message: "Não foi possível ler o arquivo." }
   }
 
-  // Janela coberta pelo arquivo (acompanhamento diário com relatórios parciais).
-  const janelaArq = periodoDe(colaboradores)
-  if (!janelaArq) {
+  const periodo = analisarPeriodo(colaboradores)
+  if (!periodo) {
     return { status: "error", message: "Nenhuma marcação encontrada no arquivo." }
   }
+  if (periodo.competencias.length > 1) {
+    return {
+      status: "error",
+      message: `O arquivo atravessa o dia 20 e cobre mais de uma competência (${periodo.competencias
+        .map(competenciaLabel)
+        .join(" e ")}). Exporte um relatório por competência.`,
+    }
+  }
 
-  const employees = await prisma.employee.findMany({
-    select: EMPLOYEE_JORNADA_SELECT,
-  })
-  const index = buildEmployeeIndex(employees)
+  // A competência vem do arquivo, não da tela: subir o TXT do mês errado deixa de ser
+  // possível em silêncio.
+  const competencia = periodo.competencias[0]
+  const periodoLabel = `${formatDate(periodo.inicio)} a ${formatDate(periodo.fim)}`
+  if (competenciaSelecionada && competenciaSelecionada !== competencia) {
+    return {
+      status: "error",
+      message: `O arquivo cobre ${periodoLabel}, ou seja, a competência ${competenciaLabel(
+        competencia
+      )} — mas a tela está em ${competenciaLabel(
+        competenciaSelecionada
+      )}. Troque a competência ou confira o arquivo.`,
+    }
+  }
+  if (await isCompetenciaFechada(competencia)) {
+    return { status: "error", message: COMPETENCIA_FECHADA_MSG }
+  }
 
-  const [tolerancia, tiposAtivos, existingList] = await Promise.all([
+  const [
+    employees,
+    vinculosRows,
+    tolerancia,
+    tiposAtivos,
+    existingList,
+    pendenciasExistentes,
+    duplicado,
+  ] = await Promise.all([
+    prisma.employee.findMany({ select: EMPLOYEE_JORNADA_SELECT }),
+    prisma.espelhoVinculo.findMany({ select: { chave: true, employeeId: true } }),
     getTolerancia(),
     getTiposAtivos(),
     prisma.espelhoFechamento.findMany({
@@ -165,119 +209,33 @@ export async function importarEspelhoFechamento(
         employee: { select: EMPLOYEE_JORNADA_SELECT },
       },
     }),
+    prisma.espelhoImportPendencia.findMany({ where: { competencia } }),
+    prisma.espelhoImportLog.findFirst({ where: { competencia, fileHash } }),
   ])
-  const existingByEmp = new Map(existingList.map((f) => [f.employeeId, f]))
 
-  const rawToDias = (rows: { data: Date; marcacoes: string }[]): EspelhoDia[] =>
-    rows.map((d) => ({
-      data: d.data,
-      marcacoes: d.marcacoes.split(" ").filter(Boolean),
-    }))
+  const index = buildEmployeeIndex(employees)
+  const empById = new Map(employees.map((e) => [e.id, e]))
+  const vinculos = new Map(
+    vinculosRows
+      .map((v) => [v.chave, empById.get(v.employeeId)] as const)
+      .filter((pair): pair is [string, (typeof employees)[number]] => !!pair[1])
+  )
 
-  const naoEncontradosNomes: string[] = []
-  const semJornadaNomes: string[] = []
-  let encerradosPulados = 0
-
-  type Proc = {
-    emp: (typeof employees)[number]
-    carry: CarryMap
-    ocorr: ReturnType<typeof detectarOcorrencias>
-    merged: EspelhoDia[] // batidas acumuladas (existentes fora da janela do arquivo + arquivo)
-  }
-  // Chaveado por employeeId: dois registros do arquivo podem casar com o MESMO colaborador
-  // do cadastro (ex.: matrícula reusada entre empresas + cadastro com essa matrícula). Nesse
-  // caso juntamos as batidas num único proc — senão o createMany de fechamentos estoura a
-  // unique (employeeId, competencia).
-  const procByEmp = new Map<string, Proc>()
-
-  // 1ª passada: mescla as batidas do arquivo com as já gravadas (import incremental —
-  // arquivo 30→04 soma ao 21→29 importado antes; dentro da janela, o arquivo novo vence).
-  for (const c of colaboradores) {
-    const mat = c.matricula.trim()
-    if (
-      incluir.size > 0 &&
-      !incluir.has(mat) &&
-      !incluir.has(mat.replace(/^0+/, ""))
-    ) {
-      continue
-    }
-
-    const emp = index.find(mat, c.nome)
-
-    if (!emp) {
-      naoEncontradosNomes.push(`${c.nome} (matrícula ${c.matricula || "—"})`)
-      continue
-    }
-    if (!hasResolverSchedule(emp)) {
-      semJornadaNomes.push(emp.name)
-      continue
-    }
-
-    // Mesmo colaborador já visto neste arquivo: soma as batidas ao proc existente.
-    const jaProc = procByEmp.get(emp.id)
-    if (jaProc) {
-      jaProc.merged = [...jaProc.merged, ...c.dias]
-      continue
-    }
-
-    const existing = existingByEmp.get(emp.id)
-    if (existing?.status === "ENCERRADO") {
-      encerradosPulados++
-      continue
-    }
-
-    const foraJanela = existing
-      ? rawToDias(existing.dias).filter(
-          (d) =>
-            d.data.getTime() < janelaArq.inicio.getTime() ||
-            d.data.getTime() > janelaArq.fim.getTime()
-        )
-      : []
-    const merged = [...foraJanela, ...c.dias]
-
-    procByEmp.set(emp.id, {
-      emp,
-      carry: existing ? buildCarry(existing.ocorrencias) : new Map(),
-      ocorr: [],
-      merged,
-    })
-  }
-
-  const procs: Proc[] = [...procByEmp.values()]
-
-  // Janela acumulada global da competência: tudo que já foi importado (qualquer
-  // fechamento) + o arquivo atual. Limita a detecção nas duas pontas.
-  let inicioAcum = janelaArq.inicio
-  let fimAcum = janelaArq.fim
-  const considerar = (d: Date) => {
-    if (d.getTime() < inicioAcum.getTime()) inicioAcum = d
-    if (d.getTime() > fimAcum.getTime()) fimAcum = d
-  }
-  for (const p of procs) for (const d of p.merged) considerar(d.data)
-  for (const f of existingList) for (const d of f.dias) considerar(d.data)
-
-  const rangeStart = competenciaRange(competencia).start
-  const inicioEfetivo =
-    inicioAcum.getTime() > rangeStart.getTime() ? inicioAcum : rangeStart
-
-  // 2ª passada: virada + detecção sobre o acumulado.
-  for (const p of procs) {
-    const resolver = buildDayResolver(p.emp)
-    const dias = aplicarVirada(p.merged, resolver, inicioEfetivo)
-    p.ocorr = detectarOcorrencias(
-      dias,
-      resolver,
-      tolerancia,
-      competencia,
-      tiposAtivos,
-      undefined,
-      fimAcum,
-      inicioEfetivo
-    )
-  }
+  const plano = planejarImport({
+    colaboradores,
+    index,
+    vinculos,
+    existentes: existingList,
+    competencia,
+    tolerancia,
+    tiposAtivos,
+    janelaArquivo: { inicio: periodo.inicio, fim: periodo.fim },
+    incluir,
+  })
 
   // Cria os fechamentos que ainda não existem, depois resolve todos os ids de uma vez.
-  const missing = procs.filter((p) => !existingByEmp.has(p.emp.id))
+  const existingByEmp = new Map(existingList.map((f) => [f.employeeId, f]))
+  const missing = plano.procs.filter((p) => !existingByEmp.has(p.emp.id))
   if (missing.length > 0) {
     await prisma.espelhoFechamento.createMany({
       data: missing.map((p) => ({
@@ -288,50 +246,25 @@ export async function importarEspelhoFechamento(
     })
   }
   const fechs = await prisma.espelhoFechamento.findMany({
-    where: { competencia, employeeId: { in: procs.map((p) => p.emp.id) } },
+    where: { competencia, employeeId: { in: plano.procs.map((p) => p.emp.id) } },
     select: { id: true, employeeId: true },
   })
   const idByEmp = new Map(fechs.map((f) => [f.employeeId, f.id]))
 
   const ids: string[] = []
-  const ocorrRows: {
-    fechamentoId: string
-    data: Date
-    tipo: string
-    detalhe: string
-    marcacoes: string
-    justificativaCategoria: string | null
-    justificativaObs: string | null
-    resolvido: boolean
-  }[] = []
+  const extIds: string[] = []
+  const ocorrRows: OcorrenciaRow[] = []
   const diaRows: { fechamentoId: string; data: Date; marcacoes: string }[] = []
-  const eventoRows: {
-    fechamentoId: string
-    action: string
-    description: string
-    actorUserId: string
-    actorName: string
-  }[] = []
+  const eventoRows: EventoRow[] = []
+  const ator = { actorUserId: user.id, actorName: actorName(user) }
 
   let ocorrenciasTotal = 0
-  for (const p of procs) {
+  for (const p of plano.procs) {
     const fechamentoId = idByEmp.get(p.emp.id)
     if (!fechamentoId) continue
     ids.push(fechamentoId)
 
-    for (const o of p.ocorr) {
-      const carried = p.carry.get(carryKey(o.data, o.tipo))
-      ocorrRows.push({
-        fechamentoId,
-        data: o.data,
-        tipo: o.tipo,
-        detalhe: o.detalhe,
-        marcacoes: o.marcacoes.join(" "),
-        justificativaCategoria: carried?.cat ?? null,
-        justificativaObs: carried?.obs ?? null,
-        resolvido: carried?.resolvido ?? false,
-      })
-    }
+    for (const o of p.ocorr) ocorrRows.push(ocorrenciaRow(fechamentoId, o))
     ocorrenciasTotal += p.ocorr.length
 
     // Batidas cruas acumuladas: fonte da verdade p/ reprocessar e p/ próximos merges
@@ -350,98 +283,111 @@ export async function importarEspelhoFechamento(
       fechamentoId,
       action: "IMPORTADO",
       description: `Arquivo "${file.name}" — ${p.ocorr.length} ocorrência(s)`,
-      actorUserId: user.id,
-      actorName: actorName(user),
+      ...ator,
     })
   }
 
-  // Fechamentos da competência que NÃO vieram no arquivo (colaborador sem batida no
-  // período novo — o relatório só lista quem bateu): a janela acumulada cresceu, então
-  // a detecção precisa rodar de novo p/ eles (faltas do período novo aparecem).
-  const processedEmp = new Set(procs.map((p) => p.emp.id))
-  const extIds: string[] = []
-  for (const f of existingList) {
-    if (
-      processedEmp.has(f.employeeId) ||
-      f.status === "ENCERRADO" ||
-      f.dias.length === 0 ||
-      !hasResolverSchedule(f.employee)
-    ) {
-      continue
-    }
-    const resolver = buildDayResolver(f.employee)
-    const dias = aplicarVirada(rawToDias(f.dias), resolver, inicioEfetivo)
-    const ocorr = detectarOcorrencias(
-      dias,
-      resolver,
-      tolerancia,
-      competencia,
-      tiposAtivos,
-      undefined,
-      fimAcum,
-      inicioEfetivo
-    )
-    const carry = buildCarry(f.ocorrencias)
-    extIds.push(f.id)
-    for (const o of ocorr) {
-      const carried = carry.get(carryKey(o.data, o.tipo))
-      ocorrRows.push({
-        fechamentoId: f.id,
-        data: o.data,
-        tipo: o.tipo,
-        detalhe: o.detalhe,
-        marcacoes: o.marcacoes.join(" "),
-        justificativaCategoria: carried?.cat ?? null,
-        justificativaObs: carried?.obs ?? null,
-        resolvido: carried?.resolvido ?? false,
-      })
-    }
+  // Quem não veio no arquivo mas teve a janela estendida por ele.
+  for (const r of plano.estendidos) {
+    extIds.push(r.fechamento.id)
+    for (const o of r.ocorr) ocorrRows.push(ocorrenciaRow(r.fechamento.id, o))
     eventoRows.push({
-      fechamentoId: f.id,
+      fechamentoId: r.fechamento.id,
       action: "REPROCESSADO",
-      description: `Janela estendida pelo arquivo "${file.name}" — ${ocorr.length} ocorrência(s)`,
-      actorUserId: user.id,
-      actorName: actorName(user),
+      description: `Janela estendida pelo arquivo "${file.name}" — ${r.ocorr.length} ocorrência(s)`,
+      ...ator,
     })
   }
+
+  // Fila de pendências: as batidas ficam represadas na pendência até alguém resolver.
+  // Quem já foi ignorado continua ignorado — a fila não volta a cobrar sozinha.
+  const pendByChave = new Map(pendenciasExistentes.map((p) => [p.chave, p]))
+  const pendenciaOps = plano.pendencias.map((p) => {
+    const atual = pendByChave.get(p.chave)
+    const dias = serializarDias([
+      ...(atual ? desserializarDias(atual.dias) : []),
+      ...p.dias,
+    ])
+    const diasCount = desserializarDias(dias).length
+    const base = {
+      tipo: p.tipo,
+      nome: p.nome,
+      matricula: p.matricula,
+      empresa: p.empresa,
+      employeeId: p.employeeId,
+      dias,
+      diasCount,
+      fileName: file.name,
+    }
+    return prisma.espelhoImportPendencia.upsert({
+      where: { competencia_chave: { competencia, chave: p.chave } },
+      create: { competencia, chave: p.chave, status: "ABERTA", ...base },
+      update:
+        atual?.status === "IGNORADA"
+          ? base
+          : { ...base, status: "ABERTA", resolvedAt: null, actorName: null },
+    })
+  })
 
   await prisma.$transaction([
     prisma.espelhoOcorrencia.deleteMany({
       where: { fechamentoId: { in: [...ids, ...extIds] } },
     }),
-    // Batidas cruas só são regravadas p/ quem veio no arquivo (merged); os estendidos mantêm as suas.
+    // Batidas cruas só são regravadas p/ quem veio no arquivo; os estendidos mantêm as suas.
     prisma.espelhoDiaRaw.deleteMany({ where: { fechamentoId: { in: ids } } }),
     prisma.espelhoOcorrencia.createMany({ data: ocorrRows }),
     prisma.espelhoDiaRaw.createMany({ data: diaRows }),
     prisma.espelhoEvento.createMany({ data: eventoRows }),
+    ...pendenciaOps,
     prisma.espelhoImportLog.create({
       data: {
         competencia,
         fileName: file.name,
-        origem,
-        actorUserId: user.id,
-        actorName: actorName(user),
-        processados: procs.length,
+        fileHash,
+        periodoInicio: periodo.inicio,
+        periodoFim: periodo.fim,
+        // Existe um único ponto de upload desde a unificação em /rh/ponto; os
+        // registros antigos guardam ESPELHOS/FECHAMENTO.
+        origem: "PONTO",
+        ...ator,
+        processados: plano.procs.length,
         ocorrencias: ocorrenciasTotal,
-        semJornada: JSON.stringify(semJornadaNomes),
-        naoEncontrados: JSON.stringify(naoEncontradosNomes),
-        encerradosPulados,
+        pendencias: plano.pendencias.length,
+        semJornada: JSON.stringify(
+          plano.pendencias.filter((p) => p.tipo === "SEM_JORNADA").map((p) => p.nome)
+        ),
+        naoEncontrados: JSON.stringify(
+          plano.pendencias
+            .filter((p) => p.tipo !== "SEM_JORNADA")
+            .map((p) => `${p.nome} (matrícula ${p.matricula || "—"})`)
+        ),
+        encerradosPulados: plano.encerradosPulados,
       },
     }),
   ])
 
-  revalidatePath("/rh/fechamento")
+  const semJornadaNomes = plano.pendencias
+    .filter((p) => p.tipo === "SEM_JORNADA")
+    .map((p) => p.nome)
+  const naoEncontradosNomes = plano.pendencias
+    .filter((p) => p.tipo !== "SEM_JORNADA")
+    .map((p) => `${p.nome} (matrícula ${p.matricula || "—"})`)
+
+  revalidatePath("/rh/ponto")
   return {
     status: "ok",
     competencia,
     resumo: {
-      processados: procs.length,
+      processados: plano.procs.length,
       ocorrencias: ocorrenciasTotal,
       semJornada: semJornadaNomes.length,
       naoEncontrados: naoEncontradosNomes.length,
-      encerradosPulados,
+      encerradosPulados: plano.encerradosPulados,
       semJornadaNomes,
       naoEncontradosNomes,
+      pendencias: plano.pendencias.length,
+      periodo: periodoLabel,
+      duplicado: !!duplicado,
     },
   }
 }
@@ -453,7 +399,7 @@ export async function reprocessarCompetencia(competencia: string): Promise<{
   error?: string
   resumo?: { processados: number; ocorrencias: number; semDados: number }
 }> {
-  const user = await requireModuloEdit("FECHAMENTO")
+  const user = await requireModuloEdit("PONTO")
   if (await isCompetenciaFechada(competencia)) {
     return { ok: false, error: COMPETENCIA_FECHADA_MSG }
   }
@@ -471,89 +417,38 @@ export async function reprocessarCompetencia(competencia: string): Promise<{
     }),
   ])
 
-  let processados = 0
-  let ocorrenciasTotal = 0
-  let semDados = 0
-  const ids: string[] = []
-  const ocorrRows: {
-    fechamentoId: string
-    data: Date
-    tipo: string
-    detalhe: string
-    marcacoes: string
-    justificativaCategoria: string | null
-    justificativaObs: string | null
-    resolvido: boolean
-  }[] = []
-  const eventoRows: {
-    fechamentoId: string
-    action: string
-    description: string
-    actorUserId: string
-    actorName: string
-  }[] = []
-
-  // Janela = período acumulado das batidas gravadas da competência (global,
-  // não por colaborador — quem faltou os últimos dias continua gerando falta).
-  let inicioAcum: Date | null = null
-  let fimAcum: Date | null = null
-  for (const f of fechs) {
-    for (const d of f.dias) {
-      if (!inicioAcum || d.data.getTime() < inicioAcum.getTime()) inicioAcum = d.data
-      if (!fimAcum || d.data.getTime() > fimAcum.getTime()) fimAcum = d.data
-    }
+  const janela = janelaAcumulada(
+    competencia,
+    fechs.map((f) => f.dias)
+  )
+  if (!janela) {
+    return { ok: true, resumo: { processados: 0, ocorrencias: 0, semDados: fechs.length } }
   }
-  const rangeStart = competenciaRange(competencia).start
-  const inicioEfetivo =
-    inicioAcum && inicioAcum.getTime() > rangeStart.getTime() ? inicioAcum : rangeStart
 
-  for (const f of fechs) {
-    // Importado antes das batidas cruas existirem: sem dados p/ recomputar.
-    if (f.dias.length === 0 || !hasResolverSchedule(f.employee)) {
-      semDados++
-      continue
-    }
-    const raw: EspelhoDia[] = f.dias.map((d) => ({
-      data: d.data,
-      marcacoes: d.marcacoes.split(" ").filter(Boolean),
-    }))
-    const resolver = buildDayResolver(f.employee)
-    const dias = aplicarVirada(raw, resolver, inicioEfetivo)
-    const ocorr = detectarOcorrencias(
-      dias,
-      resolver,
-      tolerancia,
-      competencia,
-      tiposAtivos,
-      undefined,
-      fimAcum,
-      inicioEfetivo
-    )
-    const carry = buildCarry(f.ocorrencias)
+  const { recalculados, semDados } = recomputarFechamentos({
+    fechamentos: fechs,
+    competencia,
+    tolerancia,
+    tiposAtivos,
+    janela,
+  })
 
-    ids.push(f.id)
-    for (const o of ocorr) {
-      const carried = carry.get(carryKey(o.data, o.tipo))
-      ocorrRows.push({
-        fechamentoId: f.id,
-        data: o.data,
-        tipo: o.tipo,
-        detalhe: o.detalhe,
-        marcacoes: o.marcacoes.join(" "),
-        justificativaCategoria: carried?.cat ?? null,
-        justificativaObs: carried?.obs ?? null,
-        resolvido: carried?.resolvido ?? false,
-      })
-    }
+  const ids: string[] = []
+  const ocorrRows: OcorrenciaRow[] = []
+  const eventoRows: EventoRow[] = []
+  const ator = { actorUserId: user.id, actorName: actorName(user) }
+  let ocorrenciasTotal = 0
+
+  for (const r of recalculados) {
+    ids.push(r.fechamento.id)
+    for (const o of r.ocorr) ocorrRows.push(ocorrenciaRow(r.fechamento.id, o))
+    ocorrenciasTotal += r.ocorr.length
     eventoRows.push({
-      fechamentoId: f.id,
+      fechamentoId: r.fechamento.id,
       action: "REPROCESSADO",
-      description: `Tolerância ${tolerancia}min — ${ocorr.length} ocorrência(s)`,
-      actorUserId: user.id,
-      actorName: actorName(user),
+      description: `Tolerância ${tolerancia}min — ${r.ocorr.length} ocorrência(s)`,
+      ...ator,
     })
-    processados++
-    ocorrenciasTotal += ocorr.length
   }
 
   await prisma.$transaction([
@@ -562,8 +457,11 @@ export async function reprocessarCompetencia(competencia: string): Promise<{
     prisma.espelhoEvento.createMany({ data: eventoRows }),
   ])
 
-  revalidatePath("/rh/fechamento")
-  return { ok: true, resumo: { processados, ocorrencias: ocorrenciasTotal, semDados } }
+  revalidatePath("/rh/ponto")
+  return {
+    ok: true,
+    resumo: { processados: recalculados.length, ocorrencias: ocorrenciasTotal, semDados },
+  }
 }
 
 export async function salvarJustificativa(
@@ -571,7 +469,7 @@ export async function salvarJustificativa(
   categoria: string | null,
   obs: string | null
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireModuloEdit("FECHAMENTO")
+  const user = await requireModuloEdit("PONTO")
   const oc = await prisma.espelhoOcorrencia.findUnique({
     where: { id: ocorrenciaId },
     include: {
@@ -611,7 +509,7 @@ export async function salvarJustificativa(
       },
     }),
   ])
-  revalidatePath(`/rh/fechamento/${oc.fechamento.id}`)
+  revalidatePath(`/rh/ponto/${oc.fechamento.id}`)
   return { ok: true }
 }
 
@@ -620,7 +518,7 @@ export async function salvarJustificativaLote(
   categoria: string | null,
   obs: string | null
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireModuloEdit("FECHAMENTO")
+  const user = await requireModuloEdit("PONTO")
   if (ids.length === 0) return { ok: true }
   const first = await prisma.espelhoOcorrencia.findFirst({
     where: { id: { in: ids } },
@@ -661,7 +559,7 @@ export async function salvarJustificativaLote(
       },
     }),
   ])
-  revalidatePath(`/rh/fechamento/${first.fechamento.id}`)
+  revalidatePath(`/rh/ponto/${first.fechamento.id}`)
   return { ok: true }
 }
 
@@ -669,7 +567,7 @@ export async function encerrarFechamento(
   id: string,
   force = false
 ): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean }> {
-  const user = await requireModuloEdit("FECHAMENTO")
+  const user = await requireModuloEdit("PONTO")
   const f = await prisma.espelhoFechamento.findUnique({
     where: { id },
     include: { ocorrencias: { select: { resolvido: true } } },
@@ -701,8 +599,8 @@ export async function encerrarFechamento(
       },
     }),
   ])
-  revalidatePath(`/rh/fechamento/${id}`)
-  revalidatePath("/rh/fechamento")
+  revalidatePath(`/rh/ponto/${id}`)
+  revalidatePath("/rh/ponto")
   return { ok: true }
 }
 
@@ -711,7 +609,7 @@ export async function encerrarFechamento(
 export async function encerrarProntos(
   competencia: string
 ): Promise<{ ok: boolean; error?: string; count?: number }> {
-  const user = await requireModuloEdit("FECHAMENTO")
+  const user = await requireModuloEdit("PONTO")
   if (await isCompetenciaFechada(competencia)) {
     return { ok: false, error: COMPETENCIA_FECHADA_MSG }
   }
@@ -738,14 +636,14 @@ export async function encerrarProntos(
       })),
     }),
   ])
-  revalidatePath("/rh/fechamento")
+  revalidatePath("/rh/ponto")
   return { ok: true, count: prontos.length }
 }
 
 export async function reabrirFechamento(
   id: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireModuloEdit("FECHAMENTO")
+  const user = await requireModuloEdit("PONTO")
   const f = await prisma.espelhoFechamento.findUnique({
     where: { id },
     select: { competencia: true },
@@ -768,15 +666,15 @@ export async function reabrirFechamento(
       },
     }),
   ])
-  revalidatePath(`/rh/fechamento/${id}`)
-  revalidatePath("/rh/fechamento")
+  revalidatePath(`/rh/ponto/${id}`)
+  revalidatePath("/rh/ponto")
   return { ok: true }
 }
 
 export async function excluirFechamento(
   id: string
 ): Promise<{ ok: boolean; error?: string }> {
-  await requireModuloEdit("FECHAMENTO")
+  await requireModuloEdit("PONTO")
   const f = await prisma.espelhoFechamento.findUnique({
     where: { id },
     select: { competencia: true },
@@ -786,19 +684,19 @@ export async function excluirFechamento(
     return { ok: false, error: COMPETENCIA_FECHADA_MSG }
   }
   await prisma.espelhoFechamento.delete({ where: { id } })
-  revalidatePath("/rh/fechamento")
+  revalidatePath("/rh/ponto")
   return { ok: true }
 }
 
 export async function limparCompetencia(
   competencia: string
 ): Promise<{ ok: boolean; error?: string; count?: number }> {
-  await requireModuloEdit("FECHAMENTO")
+  await requireModuloEdit("PONTO")
   if (await isCompetenciaFechada(competencia)) {
     return { ok: false, error: COMPETENCIA_FECHADA_MSG }
   }
   const r = await prisma.espelhoFechamento.deleteMany({ where: { competencia } })
-  revalidatePath("/rh/fechamento")
+  revalidatePath("/rh/ponto")
   return { ok: true, count: r.count }
 }
 
@@ -807,7 +705,7 @@ export async function fecharCompetencia(
   competencia: string,
   force = false
 ): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean }> {
-  const user = await requireModuloEdit("FECHAMENTO")
+  const user = await requireModuloEdit("PONTO")
   const abertos = await prisma.espelhoFechamento.count({
     where: { competencia, status: { not: "ENCERRADO" } },
   })
@@ -834,19 +732,19 @@ export async function fecharCompetencia(
       closedByName: actorName(user),
     },
   })
-  revalidatePath("/rh/fechamento")
+  revalidatePath("/rh/ponto")
   return { ok: true }
 }
 
 export async function reabrirCompetencia(
   competencia: string
 ): Promise<{ ok: boolean }> {
-  await requireModuloEdit("FECHAMENTO")
+  await requireModuloEdit("PONTO")
   await prisma.espelhoCompetencia.upsert({
     where: { competencia },
     update: { status: "ABERTA", closedAt: null, closedById: null, closedByName: null },
     create: { competencia, status: "ABERTA" },
   })
-  revalidatePath("/rh/fechamento")
+  revalidatePath("/rh/ponto")
   return { ok: true }
 }

@@ -39,7 +39,7 @@ function historyData(
 function refresh(id?: string, fechamentoId?: string) {
   revalidatePath("/rh/pendencias")
   revalidatePath("/")
-  if (fechamentoId) revalidatePath(`/rh/fechamento/${fechamentoId}`)
+  if (fechamentoId) revalidatePath(`/rh/ponto/${fechamentoId}`)
 }
 
 export async function createDocumentoPendencia(input: {

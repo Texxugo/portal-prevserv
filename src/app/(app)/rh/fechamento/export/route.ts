@@ -1,67 +1,9 @@
-import * as XLSX from "xlsx"
+import { NextRequest, NextResponse } from "next/server"
 
-import { prisma } from "@/lib/db"
-import { getAccess } from "@/lib/auth-helpers"
-import { podeVer } from "@/lib/permissions"
-import { competenciaLabel } from "@/lib/competencia"
-import { formatDate } from "@/lib/format"
-import {
-  OCORRENCIA_LABEL,
-  type OcorrenciaTipo,
-} from "@/lib/espelho/detectar-fechamento"
-
-export async function GET(req: Request) {
-  const access = await getAccess()
-  if (!podeVer(access, "FECHAMENTO")) {
-    return new Response("Não autorizado", { status: 403 })
-  }
-
-  const competencia = new URL(req.url).searchParams.get("comp") || ""
-  const fechs = await prisma.espelhoFechamento.findMany({
-    where: { competencia },
-    include: {
-      employee: {
-        select: {
-          name: true,
-          matricula: true,
-          department: { select: { name: true } },
-        },
-      },
-      ocorrencias: { orderBy: { data: "asc" } },
-    },
-    orderBy: { employee: { name: "asc" } },
-  })
-
-  const rows: Record<string, string>[] = []
-  for (const f of fechs) {
-    for (const o of f.ocorrencias) {
-      rows.push({
-        Matrícula: f.employee.matricula ?? "",
-        Colaborador: f.employee.name,
-        Departamento: f.employee.department?.name ?? "",
-        Status: f.status,
-        Data: formatDate(o.data),
-        Tipo: OCORRENCIA_LABEL[o.tipo as OcorrenciaTipo] ?? o.tipo,
-        Detalhe: o.detalhe,
-        Marcações: o.marcacoes,
-        Categoria: o.justificativaCategoria ?? "",
-        Observação: o.justificativaObs ?? "",
-        Resolvido: o.resolvido ? "Sim" : "Não",
-      })
-    }
-  }
-
-  const ws = XLSX.utils.json_to_sheet(rows)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, "Fechamento")
-  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer
-
-  const nome = `fechamento-${competenciaLabel(competencia).replace("/", "-")}.xlsx`
-  return new Response(new Uint8Array(buf), {
-    headers: {
-      "Content-Type":
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${nome}"`,
-    },
-  })
+// A planilha mudou de rota junto com a tela; o link antigo continua servindo o arquivo.
+export async function GET(req: NextRequest) {
+  const comp = req.nextUrl.searchParams.get("comp")
+  return NextResponse.redirect(
+    new URL(`/rh/ponto/export${comp ? `?comp=${comp}` : ""}`, req.nextUrl.origin)
+  )
 }

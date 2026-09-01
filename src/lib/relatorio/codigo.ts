@@ -1,4 +1,4 @@
-import { randomInt } from "node:crypto"
+import { blocoAleatorio } from "@/lib/codigo"
 
 // Código de autenticidade do relatório: "RD-0806N-7K3F9".
 //
@@ -6,22 +6,8 @@ import { randomInt } from "node:crypto"
 // mensagem no grupo vê na hora se o código combina com a data que o texto diz
 // ser: relatório reaproveitado se contradiz sozinho, sem ninguém abrir o portal.
 //
-// O segundo grupo é SORTEADO, nunca derivado do conteúdo. Um sufixo calculado
-// poderia ser recomputado por quem descobrisse a regra; sorteado, só existe
-// para quem o emitiu — é o banco que responde se ele é válido.
-//
-// Alfabeto sem 0/O/1/I/L/U — some a confusão de quem relê o código de uma foto
-// do WhatsApp (e o U evita palavrão acidental).
-const ALFABETO = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
+// O segundo grupo é sorteado (ver blocoAleatorio).
 const GRUPO = 5
-
-function bloco(): string {
-  let out = ""
-  for (let i = 0; i < GRUPO; i++) {
-    out += ALFABETO[randomInt(ALFABETO.length)]
-  }
-  return out
-}
 
 // Datas são "date-only" gravadas em UTC — usar getters UTC, senão o fuso
 // empurra o código para o dia anterior.
@@ -32,7 +18,7 @@ function prefixo(date: Date, periodo: string): string {
 }
 
 export function gerarCodigoRelatorio(date: Date, periodo: string): string {
-  return `RD-${prefixo(date, periodo)}-${bloco()}`
+  return `RD-${prefixo(date, periodo)}-${blocoAleatorio(GRUPO)}`
 }
 
 // Aceita o código digitado com espaço, minúscula ou sem os hífens. O tamanho

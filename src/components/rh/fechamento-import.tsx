@@ -28,19 +28,11 @@ function SubmitBtn() {
   )
 }
 
-function NameList({ title, names }: { title: string; names: string[] }) {
-  if (names.length === 0) return null
+function Aviso({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
-      <p className="flex items-center gap-2 font-medium">
-        <AlertTriangle className="size-4" />
-        {title}
-      </p>
-      <ul className="mt-1 list-inside list-disc">
-        {names.map((n) => (
-          <li key={n}>{n}</li>
-        ))}
-      </ul>
+    <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <p>{children}</p>
     </div>
   )
 }
@@ -65,7 +57,6 @@ export function FechamentoImport({ competencia }: { competencia: string }) {
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="competencia" value={competencia} />
-      <input type="hidden" name="origem" value="FECHAMENTO" />
       <div className="space-y-2">
         <Label htmlFor="file">Arquivo do espelho (.txt)</Label>
         <Input id="file" name="file" type="file" accept=".txt" required />
@@ -77,19 +68,25 @@ export function FechamentoImport({ competencia }: { competencia: string }) {
       {state?.status === "ok" && state.resumo && (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            {state.resumo.processados} processado(s) · {state.resumo.ocorrencias}{" "}
-            ocorrência(s)
+            Período {state.resumo.periodo} · {state.resumo.processados}{" "}
+            processado(s) · {state.resumo.ocorrencias} ocorrência(s)
             {state.resumo.encerradosPulados > 0 &&
               ` · ${state.resumo.encerradosPulados} já encerrado(s)`}
           </p>
-          <NameList
-            title="Não encontrados no cadastro (corrija a matrícula ou cadastre o colaborador):"
-            names={state.resumo.naoEncontradosNomes}
-          />
-          <NameList
-            title="Sem jornada/escala cadastrada (cadastre a jornada e importe de novo):"
-            names={state.resumo.semJornadaNomes}
-          />
+          {state.resumo.duplicado && (
+            <Aviso>
+              Este mesmo arquivo já havia sido importado nesta competência. Reimportar o
+              mesmo período não duplica batidas — se a intenção era outro arquivo,
+              confira qual foi enviado.
+            </Aviso>
+          )}
+          {state.resumo.pendencias > 0 && (
+            <Aviso>
+              {state.resumo.pendencias} linha(s) do arquivo não entraram no espelho e
+              foram para a fila de pendências de importação, logo abaixo. As batidas
+              ficaram guardadas — resolver a pendência aplica direto, sem reimportar.
+            </Aviso>
+          )}
         </div>
       )}
     </form>

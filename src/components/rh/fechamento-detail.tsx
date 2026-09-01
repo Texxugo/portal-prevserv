@@ -27,6 +27,7 @@ import {
 } from "@/lib/espelho/detectar-fechamento"
 import { cn } from "@/lib/utils"
 import { ButtonLink } from "@/components/button-link"
+import { CorrecaoPontoCard } from "@/components/rh/correcao-ponto-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -50,6 +51,8 @@ export type OcorrenciaView = {
   obs: string | null
   resolvido: boolean
   documentPendencias: { id: string; typeName: string; status: string }[]
+  // Só em "Marcação incompleta": código do documento de correção já emitido.
+  correcaoCodigo: string | null
 }
 
 export type EventoView = {
@@ -65,6 +68,7 @@ const EVENTO_LABEL: Record<string, string> = {
   JUSTIFICATIVA_LOTE: "Justificativa em lote",
   ENCERRADO: "Encerrado",
   REABERTO: "Reaberto",
+  CORRECAO_GERADA: "Documento de correção",
   IMPORTADO: "Importado",
   REPROCESSADO: "Reprocessado",
 }
@@ -165,6 +169,16 @@ function OcorrenciaCard({
           </span>
         )}
       </div>
+
+      {/* Marcação incompleta: o papel que o colaborador e o líder assinam com
+          os horários que faltaram. */}
+      {item.tipo === "IMPAR" && (
+        <CorrecaoPontoCard
+          occurrenceId={item.id}
+          codigo={item.correcaoCodigo}
+          canEdit={canManageDocuments}
+        />
+      )}
 
       {/* Como justificar */}
       <div className="space-y-3 border-t border-foreground/10 pt-4">

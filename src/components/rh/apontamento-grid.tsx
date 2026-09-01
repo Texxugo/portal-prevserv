@@ -1,14 +1,22 @@
 "use client"
 
 import { useMemo, useState, useTransition } from "react"
-import { ChevronLeft, ChevronRight, Loader2, Save, Search } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { ChevronLeft, ChevronRight, Loader2, Save, Search, X } from "lucide-react"
 import { toast } from "sonner"
 
-import { salvarApontamento, type ApontamentoInput } from "@/lib/actions/apontamento"
+import {
+  salvarApontamento,
+  salvarApontamentosEmLote,
+  type ApontamentoImportResult,
+  type ApontamentoImportResumo,
+  type ApontamentoInput,
+} from "@/lib/actions/apontamento"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { ApontamentoImport } from "@/components/rh/apontamento-import"
 
 // Valores editáveis na grade (números como string p/ permitir vazio).
 export type FieldValues = {
@@ -139,12 +147,16 @@ function EmployeeCard({
   row,
   competencia,
   value,
+  importado,
   onChange,
+  onSalvo,
 }: {
   row: ApontamentoRow
   competencia: string
   value: FieldValues
+  importado: boolean
   onChange: (patch: Partial<FieldValues>) => void
+  onSalvo: () => void
 }) {
   const [saving, start] = useTransition()
   const faltasTotal = (num(value.faltasE) ?? 0) + (num(value.faltasF) ?? 0)
@@ -152,16 +164,31 @@ function EmployeeCard({
   function save() {
     start(async () => {
       const r = await salvarApontamento(toInput(row.employeeId, competencia, value))
-      if (r.ok) toast.success(`Apontamento de ${row.nome} salvo.`)
-      else toast.error(r.error || "Não foi possível salvar.")
+      if (r.ok) {
+        toast.success(`Apontamento de ${row.nome} salvo.`)
+        onSalvo()
+      } else toast.error(r.error || "Não foi possível salvar.")
     })
   }
 
   return (
-    <div className="space-y-3 rounded-xl bg-card p-5 ring-1 ring-foreground/10">
+    <div
+      className={
+        importado
+          ? "space-y-3 rounded-xl bg-card p-5 ring-2 ring-primary/40"
+          : "space-y-3 rounded-xl bg-card p-5 ring-1 ring-foreground/10"
+      }
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="font-medium">{row.nome}</p>
+          <p className="font-medium">
+            {row.nome}
+            {importado && (
+              <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 align-middle text-xs font-medium text-primary">
+                importado · não salvo
+              </span>
+            )}
+          </p>
           <p className="text-sm text-muted-foreground">
             Matrícula {row.matricula || "—"}
             {faltasTotal > 0 && ` · Faltas total: ${faltasTotal}`}
@@ -223,6 +250,67 @@ function EmployeeCard({
   )
 }
 
+// Só os casos que exigem ação: quem não casou com o cadastro e quem apareceu
+// duas vezes no arquivo continua dependendo de lançamento manual.
+function ResumoImport({
+  resumo,
+  onFechar,
+}: {
+  resumo: ApontamentoImportResumo
+  onFechar: () => void
+}) {
+  const listas: [string, string[]][] = [
+    ["Nome ambíguo (mais de um cadastro)", resumo.ambiguos],
+    ["Repetidos no arquivo (não importados)", resumo.repetidos],
+  ]
+
+  return (
+    <div className="space-y-2 rounded-xl bg-muted/50 p-4 ring-1 ring-foreground/10">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm">
+          {resumo.linhas} linha(s) lidas · {resumo.preenchidos} preenchida(s) na grade
+        </p>
+        <Button variant="ghost" size="icon-sm" onClick={onFechar} aria-label="Fechar">
+          <X className="size-4" />
+        </Button>
+      </div>
+
+      {resumo.naoEncontrados.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            Sem cadastro correspondente ({resumo.naoEncontrados.length})
+          </p>
+          <ul className="space-y-0.5 text-xs text-muted-foreground">
+            {resumo.naoEncontrados.map((n) => (
+              <li key={n.nome}>
+                {n.nome}
+                {n.parecido && (
+                  <>
+                    {" — parecido com "}
+                    <span className="font-medium text-foreground">{n.parecido}</span>{" "}
+                    (confira a grafia no cadastro)
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {listas.map(([titulo, nomes]) =>
+        nomes.length === 0 ? null : (
+          <div key={titulo} className="space-y-1">
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+              {titulo} ({nomes.length})
+            </p>
+            <p className="text-xs text-muted-foreground">{nomes.join(" · ")}</p>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
 export function ApontamentoGrid({
   competencia,
   rows,
@@ -230,11 +318,83 @@ export function ApontamentoGrid({
   competencia: string
   rows: ApontamentoRow[]
 }) {
+  const router = useRouter()
   const [values, setValues] = useState<Record<string, FieldValues>>(() =>
     Object.fromEntries(rows.map((r) => [r.employeeId, r.values]))
   )
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
+  // Preenchidos pelo import e ainda não gravados.
+  const [importados, setImportados] = useState<Set<string>>(() => new Set())
+  const [resumo, setResumo] = useState<ApontamentoImportResumo | null>(null)
+  const [salvandoLote, startLote] = useTransition()
+
+  const nomePorId = useMemo(
+    () => new Map(rows.map((r) => [r.employeeId, r.nome])),
+    [rows]
+  )
+
+  // O import só mexe nos campos que vieram do arquivo — HE 100%, faltas E/F,
+  // gratificação, premiações e observações continuam como estavam.
+  function aplicarImport(r: Extract<ApontamentoImportResult, { status: "ok" }>) {
+    const s = (n: number | null) => (n === null ? "" : String(n))
+    const aplicados = r.itens.filter((i) => nomePorId.has(i.employeeId))
+
+    setValues((prev) => {
+      const next = { ...prev }
+      for (const { employeeId, campos } of aplicados) {
+        next[employeeId] = {
+          ...next[employeeId],
+          total: String(campos.total),
+          valeTransporte: String(campos.valeTransporte),
+          valeRefeicao: String(campos.valeRefeicao),
+          adicionalNoturno: s(campos.adicionalNoturno),
+          he50: campos.he50 ?? "",
+          intra: s(campos.intra),
+          faltasJust: s(campos.faltasJust),
+          faltasNJust: s(campos.faltasNJust),
+          dsr: s(campos.dsr),
+        }
+      }
+      return next
+    })
+    setImportados(new Set(aplicados.map((i) => i.employeeId)))
+    setResumo(r.resumo)
+    setPage(0)
+    toast.success(
+      `${aplicados.length} colaborador(es) preenchidos. Revise e salve os importados.`
+    )
+  }
+
+  function marcarSalvo(employeeId: string) {
+    setImportados((prev) => {
+      if (!prev.has(employeeId)) return prev
+      const next = new Set(prev)
+      next.delete(employeeId)
+      return next
+    })
+  }
+
+  function salvarImportados() {
+    const ids = [...importados]
+    startLote(async () => {
+      const r = await salvarApontamentosEmLote(
+        ids.map((id) => toInput(id, competencia, values[id]))
+      )
+      if (!r.ok) {
+        const quem = r.falhaEmployeeId ? nomePorId.get(r.falhaEmployeeId) : null
+        toast.error(
+          quem
+            ? `${quem}: ${r.error || "não foi possível salvar."} Nada foi gravado.`
+            : r.error || "Não foi possível salvar."
+        )
+        return
+      }
+      setImportados(new Set())
+      toast.success(`${r.salvos} apontamento(s) salvos.`)
+      router.refresh()
+    })
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -254,19 +414,53 @@ export function ApontamentoGrid({
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">{filtered.length} colaborador(es)</p>
-        <div className="relative max-w-xs">
-          <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
-              setPage(0)
-            }}
-            placeholder="Buscar por nome ou matrícula..."
-            className="pl-8"
-          />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <ApontamentoImport competencia={competencia} onImportado={aplicarImport} />
+          <div className="relative sm:max-w-xs">
+            <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setPage(0)
+              }}
+              placeholder="Buscar por nome ou matrícula..."
+              className="pl-8"
+            />
+          </div>
         </div>
       </div>
+
+      {resumo && <ResumoImport resumo={resumo} onFechar={() => setResumo(null)} />}
+
+      {importados.size > 0 && (
+        <div className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-primary/10 p-3 ring-1 ring-primary/30">
+          <p className="text-sm">
+            <strong>{importados.size}</strong> apontamento(s) preenchidos pelo arquivo e
+            ainda não gravados.
+          </p>
+          <div className="flex gap-2">
+            {/* Recarrega de fato: limpar só a marcação deixaria os valores do
+                arquivo na tela sem aviso de que não estão gravados. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.location.reload()}
+              disabled={salvandoLote}
+            >
+              Descartar importação
+            </Button>
+            <Button size="sm" onClick={salvarImportados} disabled={salvandoLote}>
+              {salvandoLote ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
+              Salvar importados
+            </Button>
+          </div>
+        </div>
+      )}
 
       {pageRows.map((r) => (
         <EmployeeCard
@@ -274,6 +468,8 @@ export function ApontamentoGrid({
           row={r}
           competencia={competencia}
           value={values[r.employeeId]}
+          importado={importados.has(r.employeeId)}
+          onSalvo={() => marcarSalvo(r.employeeId)}
           onChange={(patch) =>
             setValues((prev) => ({
               ...prev,

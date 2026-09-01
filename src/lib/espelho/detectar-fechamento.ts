@@ -145,7 +145,9 @@ export function detectarOcorrencias(
       out.push({
         data,
         tipo: "IMPAR",
-        detalhe: `Marcação incompleta (${marc.length} batidas)`,
+        detalhe: `Marcação incompleta (${marc.length} batida${
+          marc.length === 1 ? "" : "s"
+        })`,
         marcacoes: marc,
       })
       continue

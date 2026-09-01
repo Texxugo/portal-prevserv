@@ -64,7 +64,7 @@ export default async function DashboardPage({
   // Cada indicador responde ao seu próprio módulo: quem só opera o posto cai
   // aqui sem nenhum deles e recebe o atalho para o dia a dia.
   const showColaboradores = podeVer(user, "COLABORADORES")
-  const showFechamento = podeVer(user, "FECHAMENTO")
+  const showFechamento = podeVer(user, "PONTO")
   const showPendencias = podeVer(user, "PENDENCIAS")
   const showSensitiveRH = podeEditar(user, "PENDENCIAS")
   const showRH = showColaboradores || showFechamento || showPendencias

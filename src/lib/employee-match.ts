@@ -12,8 +12,14 @@ export function normNome(s: string): string {
     .trim()
 }
 
+// Resultado detalhado do casamento. `ambiguo` distingue "ninguém tem essa matrícula"
+// de "duas pessoas têm" — a fila de pendências precisa separar os dois casos, porque
+// a correção é diferente (cadastrar vs escolher qual).
+export type MatchResult<T> = { employee: T | null; ambiguo: boolean }
+
 export type EmployeeIndex<T> = {
   find(matricula: string, nome: string): T | null
+  findDetalhado(matricula: string, nome: string): MatchResult<T>
 }
 
 // A matrícula só é única dentro da empresa, e o "Emp." do relatório Qyon é um
@@ -48,15 +54,59 @@ export function buildEmployeeIndex<
     registrar(byNome, normNome(e.name), e)
   }
 
-  return {
-    find(matricula, nome) {
-      const mat = matricula.trim()
-      return (
-        byMat.get(mat) ??
-        byMat.get(mat.replace(/^0+/, "")) ??
-        byNome.get(normNome(nome)) ??
-        null
-      )
-    },
+  const findDetalhado = (matricula: string, nome: string): MatchResult<T> => {
+    const mat = matricula.trim()
+    // undefined = chave inexistente; null = chave ambígua (ver comentário acima).
+    const candidatos = [
+      byMat.get(mat),
+      byMat.get(mat.replace(/^0+/, "")),
+      byNome.get(normNome(nome)),
+    ]
+    for (const c of candidatos) if (c) return { employee: c, ambiguo: false }
+    return { employee: null, ambiguo: candidatos.some((c) => c === null) }
   }
+
+  return {
+    find: (matricula, nome) => findDetalhado(matricula, nome).employee,
+    findDetalhado,
+  }
+}
+
+// Conectores não distinguem ninguém ("KEVIN COSTA BRITO" e "KEVIN COSTA DE
+// BRITO" são a mesma pessoa), então saem da comparação.
+const CONECTORES = new Set(["DA", "DE", "DO", "DAS", "DOS", "E"])
+
+const tokens = (nome: string): Set<string> =>
+  new Set(normNome(nome).split(" ").filter((t) => t && !CONECTORES.has(t)))
+
+// Sugestão APENAS informativa para um nome que não casou: o cadastro com maior
+// sobreposição de sobrenomes. Nunca é usada para gravar — serve para o RH ver
+// que "GLEICE CALARA" e "GLEICE CLARA" são a mesma pessoa e acertar o cadastro.
+// Empate no topo devolve null: sugerir a pessoa errada é pior que não sugerir.
+export function sugerirParecido<T extends { name: string }>(
+  alvo: string,
+  employees: T[]
+): T | null {
+  const a = tokens(alvo)
+  if (a.size === 0) return null
+
+  let melhor: { employee: T; score: number } | null = null
+  let empate = false
+
+  for (const e of employees) {
+    const b = tokens(e.name)
+    if (b.size === 0) continue
+    let comuns = 0
+    for (const t of a) if (b.has(t)) comuns++
+    const score = comuns / Math.max(a.size, b.size)
+    if (!melhor || score > melhor.score) {
+      melhor = { employee: e, score }
+      empate = false
+    } else if (score === melhor.score) {
+      empate = true
+    }
+  }
+
+  if (!melhor || empate || melhor.score < 0.6) return null
+  return melhor.employee
 }
