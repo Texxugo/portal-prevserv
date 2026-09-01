@@ -7,7 +7,6 @@ import { Loader2 } from "lucide-react"
 import { createEmployee, updateEmployee } from "@/lib/actions/rh"
 import type { FormState } from "@/lib/form"
 import { BackLink } from "@/components/back-link"
-import { EnderecoFields } from "@/components/geo/endereco-fields"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,9 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-// Base UI Select: `items` mapeia valor → rótulo exibido no gatilho.
-const SEXO_ITEMS = { "": "— Não informado —", M: "Masculino", F: "Feminino" }
-
 type Dept = { id: string; name: string }
 type Escala = { id: string; name: string }
 
@@ -32,15 +28,7 @@ export type EmployeeValues = {
   matricula: string | null
   cpf: string | null
   phone: string | null
-  sexo: string | null
   endereco: string | null
-  cep: string | null
-  logradouro: string | null
-  numero: string | null
-  complemento: string | null
-  bairro: string | null
-  cidade: string | null
-  uf: string | null
   departmentId: string | null
   status: string
   escalaId: string | null
@@ -178,40 +166,8 @@ export function EmployeeForm({
           <FieldError messages={errors?.status} />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="sexo">Sexo</Label>
-          <Select name="sexo" defaultValue={employee?.sexo ?? ""} items={SEXO_ITEMS}>
-            <SelectTrigger id="sexo" className="w-full">
-              <SelectValue placeholder="Não informado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">— Não informado —</SelectItem>
-              <SelectItem value="M">Masculino</SelectItem>
-              <SelectItem value="F">Feminino</SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            Define a referência visual do ícone no painel operacional.
-          </p>
-          <FieldError messages={errors?.sexo} />
-        </div>
-      </div>
-
-      <div className="space-y-4 border-t pt-5">
-        <div>
-          <h3 className="text-sm font-medium">Endereço</h3>
-          <p className="text-xs text-muted-foreground">
-            Vira o alfinete do colaborador no painel operacional e a base do
-            cálculo de distância até os postos. Informe o CEP e o número.
-          </p>
-        </div>
-
-        <EnderecoFields defaults={employee} errors={errors} />
-
-        {/* Cadastro antigo: continua editável porque é o que ainda alimenta a
-            geocodificação de quem nunca teve o endereço destrinchado. */}
-        <div className="space-y-2">
-          <Label htmlFor="endereco">Endereço em texto livre (legado)</Label>
+        <div className="space-y-2 sm:col-span-2">
+          <Label htmlFor="endereco">Endereço</Label>
           <Input
             id="endereco"
             name="endereco"

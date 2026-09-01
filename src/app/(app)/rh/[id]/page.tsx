@@ -6,7 +6,6 @@ import { filtroPostoId, podeVerPosto } from "@/lib/permissions"
 import { formatDateInput } from "@/lib/format"
 import { PageHeader } from "@/components/layout/page-header"
 import { EmployeeForm, type EmployeeValues } from "@/components/rh/employee-form"
-import { WhatsappOptOut } from "@/components/rh/whatsapp-optout"
 
 export default async function EditarColaboradorPage({
   params,
@@ -37,15 +36,7 @@ export default async function EditarColaboradorPage({
     matricula: employee.matricula,
     cpf: employee.cpf,
     phone: employee.phone,
-    sexo: employee.sexo,
     endereco: employee.endereco,
-    cep: employee.cep,
-    logradouro: employee.logradouro,
-    numero: employee.numero,
-    complemento: employee.complemento,
-    bairro: employee.bairro,
-    cidade: employee.cidade,
-    uf: employee.uf,
     departmentId: employee.departmentId,
     status: employee.status,
     escalaId: employee.escalaId,
@@ -59,11 +50,6 @@ export default async function EditarColaboradorPage({
         departments={departments}
         escalas={escalas}
         employee={values}
-      />
-      <WhatsappOptOut
-        employeeId={employee.id}
-        optOut={employee.whatsappOptOut}
-        desde={employee.whatsappOptOutAt?.toISOString() ?? null}
       />
     </div>
   )

@@ -3,7 +3,6 @@ import { Role } from "@prisma/client"
 // Módulo = uma área do sistema que se libera ou se nega por usuário. A chave é
 // gravada em UserModulo.modulo, então renomear uma chave exige migração.
 export const MODULO_KEYS = [
-  "PAINEL",
   "EFETIVOS",
   "RELATORIOS",
   "COLABORADORES",
@@ -33,15 +32,6 @@ export type ModuloDef = {
 }
 
 export const MODULOS: ModuloDef[] = [
-  {
-    key: "PAINEL",
-    label: "Painel operacional",
-    descricao:
-      "Mapa dos postos e dos colaboradores, baixas do dia e convocação de extra.",
-    grupo: "Operação",
-    porPosto: true,
-    edicaoLabel: "Marcar baixa e convocar para extra",
-  },
   {
     key: "EFETIVOS",
     label: "Efetivos",

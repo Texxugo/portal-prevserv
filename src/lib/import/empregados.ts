@@ -12,10 +12,9 @@ export type EmpregadoLinha = {
   matricula: string
   name: string
   cpf: string
-  sexo: string
 }
 
-type Colunas = { matricula: number; nome: number; cpf: number; sexo: number }
+type Colunas = { matricula: number; nome: number; cpf: number }
 
 const TOTAL_PREFIX = "total de empregados"
 
@@ -30,7 +29,6 @@ function acharColunas(row: string[]): Colunas | null {
   let matricula = -1
   let nome = -1
   let cpf = -1
-  let sexo = -1
 
   row.forEach((cell, idx) => {
     if (!cell) return
@@ -38,11 +36,10 @@ function acharColunas(row: string[]): Colunas | null {
     if (matricula === -1 && (l === "codigo" || l === "matricula")) matricula = idx
     else if (nome === -1 && l === "nome") nome = idx
     else if (cpf === -1 && l.includes("cpf")) cpf = idx
-    else if (sexo === -1 && (l === "sexo" || l === "genero")) sexo = idx
   })
 
   if (nome === -1 || (matricula === -1 && cpf === -1)) return null
-  return { matricula, nome, cpf, sexo }
+  return { matricula, nome, cpf }
 }
 
 // Digita como o cadastro já guarda: 000.000.000-00. Célula numérica come o zero
@@ -53,18 +50,6 @@ export function formatCpf(raw: string): string | null {
   if (digitos.length > 11) return null
   const cpf = digitos.padStart(11, "0")
   return `${cpf.slice(0, 3)}.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-${cpf.slice(9)}`
-}
-
-// A coluna Sexo é OPCIONAL no relatório: quando não vem, o import não mexe no
-// que já está cadastrado. Aceita as formas que aparecem na prática (M/F,
-// masculino/feminino, homem/mulher).
-export function normalizarSexo(raw: string): string {
-  const v = normalizeKey(raw).replace(/[^a-z]/g, "")
-  if (!v) return ""
-  if (v.startsWith("m") && !v.startsWith("mulher")) return "M"
-  if (v.startsWith("f") || v.startsWith("mulher")) return "F"
-  if (v.startsWith("h")) return "M"
-  return ""
 }
 
 // ---------- Conciliação com o cadastro ----------
@@ -84,7 +69,6 @@ export type EmpregadoConciliado = {
     empresa: string
     matricula: string
     cpf: string
-    sexo: string
     acao: string
   }
   errors: string[]
@@ -106,9 +90,8 @@ export function chaveMatricula(
 }
 
 // Importar não pode duplicar quem já existe: o CPF é a chave e a matrícula
-// (dentro da empresa) é o desempate. Só Nome/Empresa/Matrícula/CPF e o Sexo
-// (quando a coluna existe) entram — o resto do cadastro (departamento, escala,
-// endereço, telefone) fica intacto.
+// (dentro da empresa) é o desempate. Só Nome/Empresa/Matrícula/CPF entram — o
+// resto do cadastro (departamento, escala, endereço, telefone) fica intacto.
 export function conciliarEmpregados(
   registros: EmpregadoLinha[],
   cadastrados: EmpregadoCadastrado[]
@@ -176,7 +159,6 @@ export function conciliarEmpregados(
         empresa,
         matricula,
         cpf,
-        sexo: normalizarSexo(registro.sexo),
         acao: alvo ? "Atualizar" : "Novo",
       },
       errors,
@@ -214,14 +196,13 @@ export function parseEmpregados(rows: string[][]): EmpregadoLinha[] {
 
     if (!colunas) return
 
-    const { matricula, nome, cpf, sexo } = colunas
+    const { matricula, nome, cpf } = colunas
     registros.push({
       linha: i + 1,
       empresa,
       matricula: matricula >= 0 ? (row[matricula] ?? "") : "",
       name: nome >= 0 ? (row[nome] ?? "") : "",
       cpf: cpf >= 0 ? (row[cpf] ?? "") : "",
-      sexo: sexo >= 0 ? (row[sexo] ?? "") : "",
     })
   })
 
