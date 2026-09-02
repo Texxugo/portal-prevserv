@@ -95,28 +95,30 @@ model Department {
 }
 
 model Employee {
-  id                 String               @id @default(cuid())
+  id                 String                   @id @default(cuid())
   name               String
   empresa            String? // razão social do empregador (texto livre — vem agrupada no import)
   // A matrícula só é única DENTRO da empresa: empresas diferentes reusam o mesmo
   // número (545 aparece em 3 empregadores). Ver @@unique([empresa, matricula]).
   matricula          String?
-  cpf                String?              @unique
+  cpf                String?                  @unique
   phone              String?
   endereco           String?
   departmentId       String?
-  department         Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  status             String               @default("ATIVO") // ATIVO | INATIVO | AFASTADO
+  department         Department?              @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  status             String                   @default("ATIVO") // ATIVO | INATIVO | AFASTADO
   escalaId           String?
-  escala             Escala?              @relation(fields: [escalaId], references: [id], onDelete: SetNull)
+  escala             Escala?                  @relation(fields: [escalaId], references: [id], onDelete: SetNull)
   escalaInicio       DateTime? // âncora do ciclo da escala
   movements          Movement[]
   fechamentos        EspelhoFechamento[]
   documentPendencias DocumentoPendencia[]
   apontamentos       Apontamento[]
   efetivos           Efetivo[]
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  espelhoVinculos    EspelhoVinculo[]
+  importPendencias   EspelhoImportPendencia[]
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
 
   @@unique([empresa, matricula])
   @@index([departmentId])
@@ -134,17 +136,17 @@ model Escala {
 }
 
 model Movement {
-  id          String          @id @default(cuid())
+  id          String    @id @default(cuid())
   employeeId  String
-  employee    Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   type        String // FALTA | FERIAS | CONTRATACAO | DEMISSAO
   justificada Boolean? // só para FALTA
   startDate   DateTime
   endDate     DateTime?
   note        String?
   competencia String? // "YYYY-MM" (mês de fechamento, regra 21-20) — derivado de startDate
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([employeeId])
   @@index([type])
@@ -311,18 +313,23 @@ model EspelhoEvento {
 
 // Registro de cada importação de TXT (quem, quando, arquivo, resultado).
 model EspelhoImportLog {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   competencia       String
   fileName          String
-  origem            String // ESPELHOS | FECHAMENTO
+  // Hash do arquivo: reenviar o mesmo TXT é reconhecido como reimportação.
+  fileHash          String?
+  periodoInicio     DateTime?
+  periodoFim        DateTime?
+  origem            String // ESPELHOS | FECHAMENTO | PONTO
   actorUserId       String
   actorName         String
   processados       Int
   ocorrencias       Int
+  pendencias        Int       @default(0)
   semJornada        String // JSON: nomes sem jornada cadastrada
   naoEncontrados    String // JSON: nomes não encontrados no cadastro
   encerradosPulados Int
-  createdAt         DateTime @default(now())
+  createdAt         DateTime  @default(now())
 
   @@index([competencia, createdAt])
 }
@@ -415,6 +422,7 @@ model EspelhoOcorrencia {
   justificativaObs       String?
   resolvido              Boolean              @default(false)
   documentPendencias     DocumentoPendencia[]
+  correcao               PontoCorrecao?
   createdAt              DateTime             @default(now())
 
   @@index([fechamentoId])
@@ -630,3 +638,68 @@ model RelatorioModeloItem {
   @@index([departmentId, secao, ordem])
 }
 
+// Apelido do arquivo → colaborador, ensinado à mão quando o nome do TXT não bate
+// com o cadastro. Uma vez vinculado, o import seguinte já cai no lugar sozinho.
+model EspelhoVinculo {
+  id          String   @id @default(cuid())
+  chave       String   @unique
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  nomeArquivo String
+  matricula   String?
+  empresa     String?
+  actorUserId String
+  actorName   String
+  createdAt   DateTime @default(now())
+
+  @@index([employeeId])
+}
+
+// Fila do import: o que não entrou no espelho fica represado aqui (com as
+// batidas em `dias`) até alguém vincular, cadastrar a jornada ou ignorar.
+model EspelhoImportPendencia {
+  id          String    @id @default(cuid())
+  competencia String
+  chave       String
+  tipo        String // NAO_ENCONTRADO | SEM_JORNADA
+  nome        String
+  matricula   String?
+  empresa     String?
+  employeeId  String?
+  employee    Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  dias        String // JSON: batidas represadas
+  diasCount   Int       @default(0)
+  status      String    @default("ABERTA") // ABERTA | RESOLVIDA | IGNORADA
+  motivo      String?
+  fileName    String
+  actorName   String?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([competencia, chave])
+  @@index([competencia, status])
+}
+
+// Documento de correção de marcação incompleta. O código é gerado uma vez por
+// ocorrência (unique em occurrenceId): DOCX e PDF são impressões do mesmo papel.
+model PontoCorrecao {
+  id              String            @id @default(cuid())
+  codigo          String            @unique
+  occurrenceId    String            @unique
+  ocorrencia      EspelhoOcorrencia @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employeeName    String
+  cpf             String?
+  matricula       String?
+  empresa         String?
+  competencia     String
+  data            DateTime
+  marcacoes       String
+  camposFaltantes Int               @default(1)
+  actorUserId     String
+  actorName       String
+  createdAt       DateTime          @default(now())
+
+  @@index([employeeId])
+}

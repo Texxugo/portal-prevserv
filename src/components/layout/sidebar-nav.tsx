@@ -10,7 +10,6 @@ import {
   CalendarX2,
   Building,
   ChevronDown,
-  ClipboardCheck,
   ClipboardList,
   FileClock,
   FileWarning,
@@ -100,16 +99,10 @@ const NAV: NavEntry[] = [
     hrefModulo: "COLABORADORES",
     children: [
       {
-        href: "/rh/espelhos",
-        label: "Espelhos de ponto",
+        href: "/rh/ponto",
+        label: "Ponto eletrônico",
         icon: FileClock,
-        modulo: "ESPELHOS",
-      },
-      {
-        href: "/rh/fechamento",
-        label: "Encerramento de espelho",
-        icon: ClipboardCheck,
-        modulo: "FECHAMENTO",
+        modulo: "PONTO",
       },
       {
         href: "/rh/pendencias",
