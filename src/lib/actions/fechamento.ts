@@ -563,6 +563,90 @@ export async function salvarJustificativaLote(
   return { ok: true }
 }
 
+// Justifica ocorrências que podem vir de espelhos DIFERENTES — é o lote da
+// visão por competência, onde 50 faltas do mesmo feriado estão espalhadas por
+// 50 colaboradores. Diferente de salvarJustificativaLote, que só olha o
+// primeiro fechamento porque nasceu dentro de um espelho só: aqui cada espelho
+// precisa ser checado (um encerrado no meio da seleção não pode ser alterado)
+// e cada um recebe o seu evento, senão o histórico dos outros fica mudo.
+export async function justificarOcorrencias(
+  ids: string[],
+  categoria: string | null,
+  obs: string | null
+): Promise<{ ok: boolean; error?: string; count?: number; ignorados?: number }> {
+  const user = await requireModuloEdit("PONTO")
+  if (ids.length === 0) return { ok: true, count: 0 }
+
+  const ocorrencias = await prisma.espelhoOcorrencia.findMany({
+    where: { id: { in: ids } },
+    include: {
+      fechamento: { select: { id: true, competencia: true, status: true } },
+    },
+  })
+  if (ocorrencias.length === 0) {
+    return { ok: false, error: "Ocorrências não encontradas." }
+  }
+
+  const competencias = [
+    ...new Set(ocorrencias.map((o) => o.fechamento.competencia)),
+  ]
+  for (const c of competencias) {
+    if (await isCompetenciaFechada(c)) {
+      return { ok: false, error: COMPETENCIA_FECHADA_MSG }
+    }
+  }
+
+  // Espelho encerrado fica de fora em vez de derrubar o lote inteiro: quem
+  // selecionou 50 linhas não deve perder as 49 boas por causa de uma.
+  const permitidas = ocorrencias.filter(
+    (o) => o.fechamento.status !== "ENCERRADO"
+  )
+  const ignorados = ocorrencias.length - permitidas.length
+  if (permitidas.length === 0) {
+    return {
+      ok: false,
+      error: "Todos os espelhos selecionados estão encerrados — reabra para editar.",
+    }
+  }
+
+  const idsPermitidos = permitidas.map((o) => o.id)
+  const fechamentoIds = [...new Set(permitidas.map((o) => o.fechamento.id))]
+  const porFechamento = new Map<string, number>()
+  for (const o of permitidas) {
+    porFechamento.set(o.fechamento.id, (porFechamento.get(o.fechamento.id) ?? 0) + 1)
+  }
+
+  await prisma.$transaction([
+    prisma.espelhoOcorrencia.updateMany({
+      where: { id: { in: idsPermitidos } },
+      data: {
+        justificativaCategoria: categoria || null,
+        justificativaObs: obs || null,
+        resolvido: !!categoria,
+      },
+    }),
+    prisma.espelhoFechamento.updateMany({
+      where: { id: { in: fechamentoIds }, status: "ABERTO" },
+      data: { status: "EM_ANALISE" },
+    }),
+    prisma.espelhoEvento.createMany({
+      data: fechamentoIds.map((fid) => ({
+        fechamentoId: fid,
+        action: "JUSTIFICATIVA_LOTE",
+        description: categoria
+          ? `${porFechamento.get(fid)} ocorrência(s) → ${categoria} (lote da competência)`
+          : `${porFechamento.get(fid)} ocorrência(s) → justificativa removida (lote da competência)`,
+        actorUserId: user.id,
+        actorName: actorName(user),
+      })),
+    }),
+  ])
+
+  revalidatePath("/rh/ponto")
+  for (const fid of fechamentoIds) revalidatePath(`/rh/ponto/${fid}`)
+  return { ok: true, count: idsPermitidos.length, ignorados }
+}
+
 export async function encerrarFechamento(
   id: string,
   force = false

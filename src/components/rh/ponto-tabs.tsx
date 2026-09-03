@@ -1,10 +1,10 @@
 import Link from "next/link"
-import { ClipboardCheck, Upload } from "lucide-react"
+import { ClipboardCheck, ListChecks, Upload } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 
-export type PontoAba = "importar" | "tratar"
+export type PontoAba = "importar" | "ocorrencias" | "encerrar"
 
 // Navegação entre as duas visões do ponto. Estado na URL (?aba=), não no cliente:
 // assim o link é compartilhável e o servidor só busca o que a visão precisa.
@@ -12,12 +12,14 @@ export function PontoTabs({
   aba,
   competencia,
   badgeImportar,
-  badgeTratar,
+  badgeOcorrencias,
+  badgeEncerrar,
 }: {
   aba: PontoAba
   competencia: string
   badgeImportar: number
-  badgeTratar: number
+  badgeOcorrencias: number
+  badgeEncerrar: number
 }) {
   const itens = [
     {
@@ -26,11 +28,20 @@ export function PontoTabs({
       icon: Upload,
       badge: badgeImportar,
     },
+    // O trabalho de justificar mora aqui: a ocorrência é a unidade, e as iguais
+    // ficam lado a lado mesmo vindo de colaboradores diferentes.
     {
-      key: "tratar" as const,
-      label: "Tratar e encerrar",
+      key: "ocorrencias" as const,
+      label: "Tratar ocorrências",
+      icon: ListChecks,
+      badge: badgeOcorrencias,
+    },
+    // Encerrar é por colaborador — o espelho é o documento de cada um.
+    {
+      key: "encerrar" as const,
+      label: "Encerrar espelhos",
       icon: ClipboardCheck,
-      badge: badgeTratar,
+      badge: badgeEncerrar,
     },
   ]
 

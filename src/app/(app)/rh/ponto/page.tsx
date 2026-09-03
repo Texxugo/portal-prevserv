@@ -29,6 +29,10 @@ import {
   ReprocessarButton,
 } from "@/components/rh/competencia-actions"
 import { FechamentoBoard } from "@/components/rh/fechamento-board"
+import {
+  OcorrenciasBoard,
+  type OcorrenciaCompetenciaRow,
+} from "@/components/rh/ocorrencias-board"
 import { type FechamentoRow } from "@/components/rh/fechamento-table"
 import {
   ImportPendenciasCard,
@@ -41,9 +45,12 @@ import {
 } from "@/components/rh/ponto-acompanhamento"
 import { PontoTabs, type PontoAba } from "@/components/rh/ponto-tabs"
 
-// Tela única do ponto eletrônico. Duas visões sobre o MESMO dado:
-//   importar  → sobe o TXT, ajusta a detecção, resolve pendências, avisa o colaborador
-//   tratar    → justifica as ocorrências e encerra a competência
+// Tela única do ponto eletrônico. Três visões sobre o MESMO dado, cada uma na
+// unidade em que aquele trabalho realmente acontece:
+//   importar    → sobe o TXT, ajusta a detecção, resolve pendências, avisa o colaborador
+//   ocorrencias → justifica; a unidade é a OCORRÊNCIA, e as iguais (mesmo dia,
+//                 mesmo tipo) se juntam mesmo vindo de colaboradores diferentes
+//   encerrar    → fecha o espelho; aí sim a unidade é o colaborador
 // O upload existe só aqui — não há mais uma segunda porta para o mesmo arquivo.
 export default async function PontoPage({
   searchParams,
@@ -54,7 +61,14 @@ export default async function PontoPage({
   const editable = podeEditar(user, "PONTO")
   const { comp, aba } = await searchParams
   const competencia = comp || currentCompetencia()
-  const abaAtiva: PontoAba = aba === "importar" ? "importar" : "tratar"
+  // `tratar` era o nome da aba única de justificar+encerrar: continua caindo em
+  // "ocorrências" para não quebrar link antigo, tour e favorito de quem usa.
+  const abaAtiva: PontoAba =
+    aba === "importar"
+      ? "importar"
+      : aba === "encerrar"
+        ? "encerrar"
+        : "ocorrencias"
 
   const [
     fechs,
@@ -70,7 +84,14 @@ export default async function PontoPage({
     prisma.espelhoFechamento.findMany({
       where: { competencia },
       include: {
-        employee: { select: { ...EMPLOYEE_JORNADA_SELECT, phone: true } },
+        employee: {
+          select: {
+            ...EMPLOYEE_JORNADA_SELECT,
+            phone: true,
+            // O posto vira filtro na visão por competência.
+            department: { select: { name: true } },
+          },
+        },
         ocorrencias: { orderBy: { data: "asc" } },
       },
     }),
@@ -118,6 +139,31 @@ export default async function PontoPage({
       ] as OcorrenciaTipo[],
     }))
     .sort((a, b) => a.employee.localeCompare(b.employee))
+
+  // Todas as ocorrências da competência achatadas: é a lista em que o trabalho
+  // de justificar realmente acontece, com as iguais lado a lado.
+  const ocorrenciaRows: OcorrenciaCompetenciaRow[] = fechs
+    .flatMap((f) =>
+      f.ocorrencias.map((o) => ({
+        id: o.id,
+        fechamentoId: f.id,
+        dataISO: o.data.toISOString().slice(0, 10),
+        data: formatDate(o.data),
+        tipo: o.tipo,
+        marcacoes: o.marcacoes,
+        categoria: o.justificativaCategoria,
+        resolvido: o.resolvido,
+        employeeName: f.employee.name,
+        departmentName: f.employee.department?.name ?? null,
+        fechamentoEncerrado: f.status === "ENCERRADO",
+      }))
+    )
+    .sort(
+      (a, b) =>
+        a.dataISO.localeCompare(b.dataISO) ||
+        a.tipo.localeCompare(b.tipo) ||
+        a.employeeName.localeCompare(b.employeeName)
+    )
 
   const prontos = fechs.filter(
     (f) => f.status !== "ENCERRADO" && f.ocorrencias.every((o) => o.resolvido)
@@ -232,7 +278,10 @@ export default async function PontoPage({
         aba={abaAtiva}
         competencia={competencia}
         badgeImportar={pendenciasAbertas}
-        badgeTratar={rows.filter((r) => r.resolved < r.total).length}
+        badgeOcorrencias={ocorrenciaRows.filter((o) => !o.resolvido).length}
+        badgeEncerrar={
+          fechs.filter((f) => f.status !== "ENCERRADO").length
+        }
       />
 
       {fechada && (
@@ -288,6 +337,14 @@ export default async function PontoPage({
             />
           </div>
         </>
+      ) : abaAtiva === "ocorrencias" ? (
+        <div data-tour="ponto-ocorrencias">
+          <OcorrenciasBoard
+            rows={ocorrenciaRows}
+            competencia={competencia}
+            canEdit={editable && !fechada}
+          />
+        </div>
       ) : (
         <div data-tour="ponto-board">
           <FechamentoBoard
