@@ -6,7 +6,10 @@ import { competenciaSelectOptions, currentCompetencia } from "@/lib/competencia"
 import { formatDate } from "@/lib/format"
 import { podeEditar } from "@/lib/permissions"
 import { getTiposAtivos, getTolerancia } from "@/lib/espelho/config"
-import { OCORRENCIA_LABEL } from "@/lib/espelho/detectar-fechamento"
+import {
+  OCORRENCIA_LABEL,
+  type OcorrenciaTipo,
+} from "@/lib/espelho/detectar-fechamento"
 import {
   buildDayResolver,
   hasResolverSchedule,
@@ -109,7 +112,10 @@ export default async function PontoPage({
       status: f.status,
       total: f.ocorrencias.length,
       resolved: f.ocorrencias.filter((o) => o.resolvido).length,
-      hasFalta: f.ocorrencias.some((o) => o.tipo === "FALTA"),
+      tipos: [...new Set(f.ocorrencias.map((o) => o.tipo))] as OcorrenciaTipo[],
+      tiposPendentes: [
+        ...new Set(f.ocorrencias.filter((o) => !o.resolvido).map((o) => o.tipo)),
+      ] as OcorrenciaTipo[],
     }))
     .sort((a, b) => a.employee.localeCompare(b.employee))
 

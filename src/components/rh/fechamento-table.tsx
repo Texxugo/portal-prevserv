@@ -3,6 +3,7 @@
 import type { ColumnDef } from "@tanstack/react-table"
 
 import { excluirFechamento } from "@/lib/actions/fechamento"
+import { type OcorrenciaTipo } from "@/lib/espelho/detectar-fechamento"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { ButtonLink } from "@/components/button-link"
@@ -15,7 +16,10 @@ export type FechamentoRow = {
   status: string
   total: number
   resolved: number
-  hasFalta: boolean
+  // Tipos de ocorrência presentes no espelho, e o recorte dos que ainda não
+  // foram justificados — é o que alimenta os filtros do board.
+  tipos: OcorrenciaTipo[]
+  tiposPendentes: OcorrenciaTipo[]
 }
 
 const STATUS: Record<string, { label: string; className: string }> = {
