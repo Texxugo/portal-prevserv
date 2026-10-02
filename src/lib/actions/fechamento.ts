@@ -48,6 +48,7 @@ type OcorrenciaRow = {
   justificativaCategoria: string | null
   justificativaObs: string | null
   resolvido: boolean
+  excluida: boolean
 }
 
 type EventoRow = {
@@ -71,6 +72,7 @@ function ocorrenciaRow(
     justificativaCategoria: o.justificativaCategoria,
     justificativaObs: o.justificativaObs,
     resolvido: o.resolvido,
+    excluida: o.excluida,
   }
 }
 
@@ -645,6 +647,61 @@ export async function justificarOcorrencias(
   revalidatePath("/rh/ponto")
   for (const fid of fechamentoIds) revalidatePath(`/rh/ponto/${fid}`)
   return { ok: true, count: idsPermitidos.length, ignorados }
+}
+
+// Tira (ou devolve) uma ocorrência do acompanhamento: some do card e da mensagem
+// de WhatsApp, mas segue em tratar/encerrar — é "não vou cobrar isso do
+// colaborador", não "isso não aconteceu".
+// Recebe as ocorrências do card inteiro; cada espelho afetado ganha o seu evento.
+export async function excluirDoAcompanhamento(
+  ocorrenciaIds: string[],
+  excluida = true
+): Promise<{ ok: boolean; error?: string }> {
+  const user = await requireModuloEdit("PONTO")
+  if (ocorrenciaIds.length === 0) return { ok: true }
+  const ocorrencias = await prisma.espelhoOcorrencia.findMany({
+    where: { id: { in: ocorrenciaIds } },
+    orderBy: { data: "asc" },
+    include: { fechamento: { select: { id: true, competencia: true } } },
+  })
+  if (ocorrencias.length === 0) {
+    return { ok: false, error: "Ocorrência não encontrada." }
+  }
+  for (const c of new Set(ocorrencias.map((o) => o.fechamento.competencia))) {
+    if (await isCompetenciaFechada(c)) {
+      return { ok: false, error: COMPETENCIA_FECHADA_MSG }
+    }
+  }
+
+  const porFechamento = new Map<string, typeof ocorrencias>()
+  for (const o of ocorrencias) {
+    const lista = porFechamento.get(o.fechamento.id)
+    if (lista) lista.push(o)
+    else porFechamento.set(o.fechamento.id, [o])
+  }
+  const destino = excluida
+    ? "retirada(s) do acompanhamento"
+    : "devolvida(s) ao acompanhamento"
+
+  await prisma.$transaction([
+    prisma.espelhoOcorrencia.updateMany({
+      where: { id: { in: ocorrencias.map((o) => o.id) } },
+      data: { excluida },
+    }),
+    prisma.espelhoEvento.createMany({
+      data: [...porFechamento].map(([fechamentoId, lista]) => ({
+        fechamentoId,
+        action: excluida ? "EXCLUIDA_ACOMPANHAMENTO" : "RESTAURADA_ACOMPANHAMENTO",
+        description: `${lista
+          .map((o) => `${formatDate(o.data)} · ${tipoLabel(o.tipo)}`)
+          .join(", ")} → ${destino}`,
+        actorUserId: user.id,
+        actorName: actorName(user),
+      })),
+    }),
+  ])
+  revalidatePath("/rh/ponto")
+  return { ok: true }
 }
 
 export async function encerrarFechamento(

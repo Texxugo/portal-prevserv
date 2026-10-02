@@ -86,17 +86,19 @@ export type OcorrenciaGravada = {
   justificativaCategoria: string | null
   justificativaObs: string | null
   resolvido: boolean
+  excluida: boolean
 }
 
 export type OcorrenciaPlanejada = Ocorrencia & {
   justificativaCategoria: string | null
   justificativaObs: string | null
   resolvido: boolean
+  excluida: boolean
 }
 
 type CarryMap = Map<
   string,
-  { cat: string | null; obs: string | null; resolvido: boolean }
+  { cat: string | null; obs: string | null; resolvido: boolean; excluida: boolean }
 >
 
 function carryKey(data: Date, tipo: string): string {
@@ -110,13 +112,14 @@ function buildCarry(ocorrencias: OcorrenciaGravada[]): CarryMap {
       cat: o.justificativaCategoria,
       obs: o.justificativaObs,
       resolvido: o.resolvido,
+      excluida: o.excluida,
     })
   }
   return map
 }
 
-// A ocorrência é recriada a cada import; a justificativa já dada sobrevive pela chave
-// data+tipo.
+// A ocorrência é recriada a cada import; a justificativa já dada (e a retirada do
+// acompanhamento) sobrevive pela chave data+tipo.
 function comCarry(ocorr: Ocorrencia[], carry: CarryMap): OcorrenciaPlanejada[] {
   return ocorr.map((o) => {
     const carried = carry.get(carryKey(o.data, o.tipo))
@@ -125,6 +128,7 @@ function comCarry(ocorr: Ocorrencia[], carry: CarryMap): OcorrenciaPlanejada[] {
       justificativaCategoria: carried?.cat ?? null,
       justificativaObs: carried?.obs ?? null,
       resolvido: carried?.resolvido ?? false,
+      excluida: carried?.excluida ?? false,
     }
   })
 }

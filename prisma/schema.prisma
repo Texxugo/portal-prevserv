@@ -421,6 +421,10 @@ model EspelhoOcorrencia {
   justificativaCategoria String?
   justificativaObs       String?
   resolvido              Boolean              @default(false)
+  // Tirada do acompanhamento ("não vou cobrar"): some do card e da mensagem de
+  // WhatsApp, mas continua valendo em tratar/encerrar. Sobrevive ao reimport pela
+  // mesma chave data+tipo da justificativa.
+  excluida               Boolean              @default(false)
   documentPendencias     DocumentoPendencia[]
   correcao               PontoCorrecao?
   createdAt              DateTime             @default(now())

@@ -172,8 +172,12 @@ export default async function PontoPage({
 
   // Acompanhamento: quem ainda tem ocorrência sem justificativa. A mensagem já sai
   // montada do servidor — a tela só permite editar o texto antes de enviar.
+  // `excluida` vale só aqui: quem o RH decidiu não cobrar some do card e da
+  // mensagem, mas segue nas outras abas.
+  const emAcompanhamento = (o: { resolvido: boolean; excluida: boolean }) =>
+    !o.resolvido && !o.excluida
   const comPendencia = fechs.filter(
-    (f) => f.status !== "ENCERRADO" && f.ocorrencias.some((o) => !o.resolvido)
+    (f) => f.status !== "ENCERRADO" && f.ocorrencias.some(emAcompanhamento)
   )
 
   const avisos = await prisma.whatsappMessageLog.findMany({
@@ -196,8 +200,9 @@ export default async function PontoPage({
   const acompanhamento: AcompanhamentoRow[] = comPendencia
     .map((f) => {
       const dias = f.ocorrencias
-        .filter((o) => !o.resolvido)
+        .filter(emAcompanhamento)
         .map((o) => ({
+          id: o.id,
           data: formatDate(o.data),
           marcacoes: o.marcacoes.split(" ").filter(Boolean),
           tipo: OCORRENCIA_LABEL[o.tipo as keyof typeof OCORRENCIA_LABEL] ?? o.tipo,

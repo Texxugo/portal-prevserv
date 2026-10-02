@@ -10,10 +10,12 @@ import {
   Loader2,
   Search,
   Send,
+  Trash2,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { enviarEspelhoWhatsapp } from "@/lib/actions/espelho"
+import { excluirDoAcompanhamento } from "@/lib/actions/fechamento"
 import { createDocumentoPendencia } from "@/lib/actions/documentos"
 import { ButtonLink } from "@/components/button-link"
 import { OnDutyBadge } from "@/components/rh/on-duty-badge"
@@ -50,6 +52,7 @@ type DocumentType = { id: string; name: string }
 const PAGE_SIZE = 10
 
 export type AcompanhamentoDia = {
+  id: string
   data: string
   marcacoes: string[]
   tipo: string
@@ -85,6 +88,7 @@ function ReviewCard({
   documentTypes,
   pendSent,
   onPendSent,
+  onDiasChange,
   canEdit,
 }: {
   row: AcompanhamentoRow
@@ -96,10 +100,39 @@ function ReviewCard({
   documentTypes: DocumentType[]
   pendSent: boolean
   onPendSent: () => void
+  onDiasChange: () => void
   canEdit: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
+  const [removendo, setRemovendo] = useState(false)
+
+  // Tira as ocorrências do card só desta lista. Se o card voltar (Desfazer), a
+  // mensagem vem remontada do servidor — o texto editado à mão é descartado.
+  async function excluirTodas() {
+    const ids = row.dias.map((d) => d.id)
+    setRemovendo(true)
+    const r = await excluirDoAcompanhamento(ids, true)
+    setRemovendo(false)
+    if (!r.ok) {
+      toast.error(r.error || "Não foi possível excluir.")
+      return
+    }
+    onDiasChange()
+    toast.success(
+      `${ids.length} ocorrência(s) de ${row.nome} removida(s) do acompanhamento.`,
+      {
+        action: {
+          label: "Desfazer",
+          onClick: async () => {
+            const u = await excluirDoAcompanhamento(ids, false)
+            if (!u.ok) toast.error(u.error || "Não foi possível desfazer.")
+            else onDiasChange()
+          },
+        },
+      }
+    )
+  }
   const canSend = canEdit && !!row.phone && !sent
 
   const [pendOpen, setPendOpen] = useState(false)
@@ -185,6 +218,23 @@ function ReviewCard({
           >
             <ExternalLink className="size-4" />
           </ButtonLink>
+          {canEdit && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Excluir todas as ocorrências de ${row.nome}`}
+              title="Excluir todas do acompanhamento"
+              onClick={excluirTodas}
+              disabled={removendo}
+              className="text-muted-foreground hover:text-destructive"
+            >
+              {removendo ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -198,8 +248,8 @@ function ReviewCard({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {row.dias.map((d, i) => (
-              <TableRow key={i}>
+            {row.dias.map((d) => (
+              <TableRow key={d.id}>
                 <TableCell>{d.data}</TableCell>
                 <TableCell>
                   <span title={d.detalhe}>{d.tipo}</span>
@@ -417,6 +467,13 @@ export function PontoAcompanhamento({
             pendSent={pendIds.has(row.fechamentoId)}
             onPendSent={() =>
               setPendIds((s) => new Set(s).add(row.fechamentoId))
+            }
+            onDiasChange={() =>
+              setMessages((m) => {
+                const next = { ...m }
+                delete next[row.fechamentoId]
+                return next
+              })
             }
             canEdit={canEdit}
           />

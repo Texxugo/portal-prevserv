@@ -70,6 +70,8 @@ const EVENTO_LABEL: Record<string, string> = {
   CORRECAO_GERADA: "Documento de correção",
   IMPORTADO: "Importado",
   REPROCESSADO: "Reprocessado",
+  EXCLUIDA_ACOMPANHAMENTO: "Retirada do acompanhamento",
+  RESTAURADA_ACOMPANHAMENTO: "Devolvida ao acompanhamento",
 }
 
 const TIPO_CLASS: Record<string, string> = {
